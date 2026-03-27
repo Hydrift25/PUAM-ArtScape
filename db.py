@@ -16,7 +16,7 @@ def get_all_artworks(limit=50):
     Returns artworks with location + metadata.
     """
     query = """
-        SELECT 
+        SELECT
             g.objectid,
             g.lat,
             g.long,
@@ -50,7 +50,7 @@ def get_all_artworks(limit=50):
 
 def get_artwork_by_id(objectid):
     query = """
-        SELECT 
+        SELECT
             g.objectid,
             g.lat,
             g.long,
@@ -102,3 +102,14 @@ def get_nearby_artworks(user_lat, user_lon, limit=3):
     artworks.sort(key=lambda x: x["distance"])
 
     return artworks[:limit]
+
+def favorite_artwork(objectid):
+    update_query = """
+                    UPDATE object_details
+                    SET favorited = true
+                    WHERE objectid = %s
+                """
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(update_query, (objectid,))

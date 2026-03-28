@@ -1,9 +1,9 @@
 import flask
-import dbdata.db as db
+import app.database.db as db
 
 #-----------------------------------------------------------------------
 
-app = flask.Flask(__name__)
+app = flask.Flask(__name__, template_folder="../templates")
 
 #-----------------------------------------------------------------------
 

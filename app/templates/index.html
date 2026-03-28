@@ -116,6 +116,54 @@
                 display: none;
             }
         }
+
+        .custom-marker {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+
+        .marker-inner {
+            width: 15px;
+            height: 15px;
+            border-radius: 50%;
+            border: 2px solid white;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+            transition: transform 0.2s ease-in-out;
+        }
+
+        .marker-nearby .marker-inner {
+            background-color: #EE7F2D;
+            width: 24px;
+            height: 24px;
+        }
+
+        .marker-all .marker-inner {
+            background-color: #808080;
+            opacity: 0.8;
+        }
+
+        .custom-marker:hover .marker-inner {
+            transform: scale(1.3);
+            z-index: 10;
+        }
+
+        .user-location-marker {
+            width: 20px;
+            height: 20px;
+            background-color: #007cff;
+            border: 3px solid white;
+            border-radius: 50%;
+            box-shadow: 0 0 10px rgba(0,124,255,0.5);
+            animation: pulse-blue 2s infinite;
+        }
+
+        @keyframes pulse-blue {
+            0% { box-shadow: 0 0 0 0 rgba(0, 124, 255, 0.7); }
+            70% { box-shadow: 0 0 0 15px rgba(0, 124, 255, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(0, 124, 255, 0); }
+        }
     </style>
 </head>
 
@@ -212,9 +260,13 @@
 
                 allData.forEach(art => {
                     if (!nearbyIds.includes(art.objectid)) {
+                        const el = document.createElement('div');
+                        el.className = 'custom-marker marker-all';
+                        el.innerHTML = '<div class="marker-inner"></div>'
+
                         const popup = new mapboxgl.Popup({offset: 25, focusAfterOpen: false, closeButton: false, className: 'compact-popup'})
                                     .setHTML(getSuccinctHTML(art))
-                        const marker = new mapboxgl.Marker({color: '#808080', scale:0.7})
+                        const marker = new mapboxgl.Marker(el)
                             .setLngLat([art.lon, art.lat])
                             .addTo(map);
                         
@@ -229,9 +281,13 @@
                 });
 
                 nearbyData.forEach(art => {
+                    const el = document.createElement('div');
+                    el.className = 'custom-marker marker-nearby';
+                    el.innerHTML = '<div class="marker-inner"></div>';
+
                     const popup = new mapboxgl.Popup({offset: 25, focusAfterOpen: false})
                                 .setHTML(getDetailedHTML(art))
-                    const marker = new mapboxgl.Marker({color: '#EE7F2D', scale:1.2})
+                    const marker = new mapboxgl.Marker(el)
                         .setLngLat([art.lon, art.lat])
                         .addTo(map);
 
@@ -265,6 +321,43 @@
                 loadArtworks(40.3430, -74.6514);
             }
         );
+
+        let userMarker = null;
+
+        function trackUserLocation() {
+            if (!navigator.geolocation) {
+                console.log("Geolocation is not supported by your browser");
+                return;
+            }
+
+            navigator.geolocation.watchPosition(
+                (position) => {
+                    const { latitude, longitude } = position.coords;
+
+                    if (!userMarker) {
+                        const el = document.createElement('div');
+                        el.className = 'user-location-marker';
+
+                        userMarker = new mapboxgl.Marker(el)
+                            .setLngLat([longitude, latitude])
+                            .addTo(map);
+                        
+                        map.flyTo({ center: [longitude, latitude], zoom: 14 });
+                    } else {
+                        userMarker.setLngLat([longitude, latitude]);
+                    }
+                },
+                (error) => {
+                    console.error("Error getting location: ", error);
+                },
+                {
+                    enableHighAccuracy: true,
+                    maximumAge: 10000
+                }
+            );
+        }
+
+        trackUserLocation();
 
     </script>
 </body>

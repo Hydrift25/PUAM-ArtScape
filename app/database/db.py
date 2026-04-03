@@ -3,14 +3,16 @@ import contextlib
 import psycopg
 import math
 from decimal import Decimal
+from dotenv import load_dotenv
 
 #-----------------------------------------------------------------------
 
-DATABASE_URL = "postgresql://neondb_owner:npg_9Pmqxi7bnEeF@ep-proud-rain-an2873px.c-6.us-east-1.aws.neon.tech/neondb?sslmode=require"
+load_dotenv()
+db_url = os.getenv("DATABASE_URL")
 
 #-----------------------------------------------------------------------
 
-def get_all_artworks(limit=50):
+def get_all_artworks():
     """
     Returns artworks with location + metadata.
     """
@@ -26,14 +28,13 @@ def get_all_artworks(limit=50):
             d.favorited
         FROM geo_prelim g
         LEFT JOIN object_details d
-        ON g.objectid = d.objectid
-        LIMIT %s;
+        ON g.objectid = d.objectid;
     """
 
     with contextlib.closing(
-        psycopg.connect(DATABASE_URL)) as conn:
+        psycopg.connect(db_url)) as conn:
         with contextlib.closing(conn.cursor()) as cur:
-            cur.execute(query, (limit,))
+            cur.execute(query)
             rows = cur.fetchall()
 
     return [
@@ -69,7 +70,7 @@ def get_artwork_by_id(objectid):
     """
 
     with contextlib.closing(
-        psycopg.connect(DATABASE_URL)) as conn:
+        psycopg.connect(db_url)) as conn:
         with contextlib.closing(conn.cursor()) as cur:
             cur.execute(query, (objectid,))
             row = cur.fetchone()
@@ -100,7 +101,7 @@ def haversine(lat1, lon1, lat2, lon2):
 
 
 def get_nearby_artworks(user_lat, user_lon, limit=3):
-    artworks = get_all_artworks(limit=100)  # small dataset for now
+    artworks = get_all_artworks()  # small dataset for now
 
     for art in artworks:
         art["distance"] = haversine(user_lat, user_lon, art["lat"], art["lon"])
@@ -119,7 +120,7 @@ def favorite_artwork(objectid):
                 """
 
     with contextlib.closing(
-        psycopg.connect(DATABASE_URL)) as conn:
+        psycopg.connect(db_url)) as conn:
         with contextlib.closing(conn.cursor()) as cur:
             cur.execute(update_query, (objectid,))
             new_status = cur.fetchone()[0]

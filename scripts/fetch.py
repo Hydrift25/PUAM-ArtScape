@@ -2,14 +2,16 @@ import os
 import requests
 from contextlib import contextmanager
 import psycopg
+from dotenv import load_dotenv
 
-DATABASE_URL = "DATABASE_URL_REMOVED"
+load_dotenv()
+db_url = os.getenv("DATABASE_URL")
 
 # ---------- DB CONNECTION ----------
 
 @contextmanager
 def get_conn():
-    conn = psycopg.connect(DATABASE_URL)
+    conn = psycopg.connect(db_url)
     try:
         yield conn
         conn.commit()

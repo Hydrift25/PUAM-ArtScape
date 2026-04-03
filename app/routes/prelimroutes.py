@@ -1,18 +1,17 @@
+import os
 import flask
-import app.database.db as db
+from flask import send_from_directory
+from app.database import db
 
 #-----------------------------------------------------------------------
 
-app = flask.Flask(__name__, template_folder="../templates")
+app = flask.Flask(
+    __name__,
+    static_folder=os.path.join(os.path.dirname(__file__), '..', '..', 'frontend', 'dist'),
+    static_url_path=''
+)
 
 #-----------------------------------------------------------------------
-
-
-# Serve frontend
-@app.route("/", methods=['GET'])
-@app.route("/index", methods=['GET'])
-def index():
-    return flask.render_template("index.html")
 
 
 # API endpoint
@@ -35,3 +34,13 @@ def favorite():
     is_now_favorite = db.favorite_artwork(id)
     print(f"Is object {id} favorited: {is_now_favorite}")
     return flask.jsonify({"favorited": is_now_favorite})
+
+# Serve React
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def serve_react(path):
+    dist = app.static_folder
+    target = os.path.join(dist, path)
+    if path and os.path.exists(target):
+        return send_from_directory(dist, path)
+    return send_from_directory(dist, 'index.html')

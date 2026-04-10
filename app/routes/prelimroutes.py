@@ -1,6 +1,8 @@
 import os
 import flask
-from flask import send_from_directory
+from flask import send_from_directory, session, redirect, url_for
+from authlib.integrations.flask_client import OAuth
+from flask_cors import CORS
 from app.database import db
 
 #-----------------------------------------------------------------------
@@ -9,6 +11,21 @@ app = flask.Flask(
     __name__,
     static_folder=os.path.join(os.path.dirname(__file__), '..', '..', 'frontend', 'dist'),
     static_url_path=''
+)
+app.secret_key = os.getenv("APP_SECRET_KEY")
+frontend_url = os.getenv("FRONTEND_URL")
+if frontend_url:
+    CORS(app, supports_credentials=True, origins=frontend_url)
+else:
+    CORS(app, supports_credentials=True)
+
+oauth = OAuth(app)
+oauth.register(
+    name='google',
+    client_id=os.getenv("GOOGLE_CLIENT_ID"),
+    client_secret=os.getenv("GOOGLE_CLIENT_SECRET"),
+    server_metadata_url='https://accounts.google.com/.well-known/openid-configuration',
+    client_kwargs={'scope': 'openid email profile'},
 )
 
 #-----------------------------------------------------------------------
@@ -26,14 +43,23 @@ def nearby():
     lon = float(flask.request.args.get("lon"))
     return flask.jsonify(db.get_nearby_artworks(lat, lon))
 
-@app.route("/api/artworks/favorite", methods=['GET', 'POST'])
+@app.route("/api/artworks/favorite", methods=['POST'])
 def favorite():
-    id = int(flask.request.args.get("objectid"))
-    if not id:
-        return flask.jsonify({"error": "No ID provided"}), 400
-    is_now_favorite = db.favorite_artwork(id)
-    print(f"Is object {id} favorited: {is_now_favorite}")
+    user = session.get("user")
+    if not user:
+        return flask.jsonify({"error": "Not logged in"}), 401
+    objectid = flask.request.json.get("objectid")
+    if not objectid:
+        return flask.jsonify({"error": "No objectid provided"}), 400
+    is_now_favorite = db.toggle_favorite(user["id"], objectid)
     return flask.jsonify({"favorited": is_now_favorite})
+
+@app.route("/api/artworks/favorites", methods=['GET'])
+def get_favorites():
+    user = session.get("user")
+    if not user:
+        return flask.jsonify({"error": "Not logged in"}), 401
+    return flask.jsonify(db.get_favorites(user["id"]))
 
 # Serve React
 @app.route('/', defaults={'path': ''})
@@ -45,23 +71,102 @@ def serve_react(path):
         return send_from_directory(dist, path)
     return send_from_directory(dist, 'index.html')
 
-@app.route("/api/artworks/visited_artworks", methods=['GET'])
+@app.route("/api/artworks/visited", methods=['GET'])
 def visited_artworks():
-    user_id = str(flask.request.args.get("user_id"))
-    if not user_id:
-        return flask.jsonify({"error": "No User ID provided"}), 400
+    user = session.get("user")
+    if not user:
+        return flask.jsonify({"error": "Not logged in"}), 401
+    return flask.jsonify(db.get_visited_artworks(user["id"]))
 
-    visited_artworks = db.get_visited_artworks(user_id)
-
-    return flask.jsonify(visited_artworks)
-
-@app.route("/api/artworks/update_visited_artwork", methods=['POST'])
+@app.route("/api/artworks/visited", methods=['POST'])
 def update_visited_artwork():
-    user_id = str(flask.request.args.get("user_id"))
-    object_id = int(flask.request.args.get("object_id"))
-    if not user_id or not object_id:
-        return flask.jsonify({"error": "No User ID/Object ID provided"}), 400
+    user = session.get("user")
+    if not user:
+        return flask.jsonify({"error": "Not logged in"}), 401
+    objectid = flask.request.json.get("objectid")
+    if not objectid:
+        return flask.jsonify({"error": "No objectid provided"}), 400
+    db.update_visited_artwork(user["id"], objectid)
+    return flask.jsonify({"success": True})
 
-    db.update_visited_artwork(user_id, object_id)
+#-----------------------------------------------------------------------
 
-    return flask.jsonify(True)
+@app.route("/api/scavenger/find", methods=['POST'])
+def scavenger_find():
+    user = session.get("user")
+    if not user:
+        return flask.jsonify({"error": "Not logged in"}), 401
+    objectid = flask.request.json.get("objectid")
+    if not objectid:
+        return flask.jsonify({"error": "No objectid provided"}), 400
+    db.record_find(user["id"], objectid)
+    return flask.jsonify({"success": True})
+
+@app.route("/api/scavenger/verify/<int:objectid>", methods=['POST'])
+def scavenger_verify(objectid):
+    user = session.get("user")
+    if not user:
+        return flask.jsonify({"error": "Not logged in"}), 401
+    db.verify_find(user["id"], objectid)
+    return flask.jsonify({"success": True})
+
+@app.route("/api/scavenger/finds", methods=['GET'])
+def scavenger_finds():
+    user = session.get("user")
+    if not user:
+        return flask.jsonify({"error": "Not logged in"}), 401
+    return flask.jsonify(db.get_finds(user["id"]))
+
+@app.route("/api/scavenger/stats", methods=['GET'])
+def scavenger_stats():
+    user = session.get("user")
+    if not user:
+        return flask.jsonify({"error": "Not logged in"}), 401
+    return flask.jsonify(db.get_scavenger_stats(user["id"]))
+
+@app.route("/api/leaderboard", methods=['GET'])
+def leaderboard():
+    return flask.jsonify(db.get_leaderboard())
+
+@app.route("/api/leaderboard/me", methods=['GET'])
+def leaderboard_me():
+    user = session.get("user")
+    if not user:
+        return flask.jsonify({"error": "Not logged in"}), 401
+    result = db.get_leaderboard_me(user["id"])
+    if result is None:
+        return flask.jsonify({"error": "User not found"}), 404
+    return flask.jsonify(result)
+
+#-----------------------------------------------------------------------
+
+@app.route("/api/auth/login")
+def auth_login():
+    callback_url = url_for("auth_callback", _external=True)
+    return oauth.google.authorize_redirect(callback_url)
+
+@app.route("/api/auth/callback")
+def auth_callback():
+    token = oauth.google.authorize_access_token()
+    userinfo = token.get("userinfo", {})
+    user = db.get_or_create_user(
+        google_sub=userinfo.get("sub"),
+        email=userinfo.get("email"),
+        display_name=userinfo.get("name"),
+        avatar_url=userinfo.get("picture"),
+    )
+    session["user"] = user
+    frontend_url = os.getenv("FRONTEND_URL", "/")
+    return redirect(frontend_url)
+
+@app.route("/api/auth/logout")
+def auth_logout():
+    session.pop("user", None)
+    return flask.jsonify({"success": True})
+
+@app.route("/api/auth/me")
+def auth_me():
+    user = session.get("user")
+    if user:
+        return flask.jsonify(user)
+    return flask.jsonify({"user": None})

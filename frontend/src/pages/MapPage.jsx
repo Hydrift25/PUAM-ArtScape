@@ -3,15 +3,16 @@ import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import BottomSheet from "../components/BottomSheet";
 import ScavengerSidebar from "../components/ScavengerSidebar";
+import NearestArtworksPanel from "../components/NearestArtworksPanel";
 import {
 	createNearbyMarkerEl,
 	createAllMarkerEl,
 	createUserMarkerEl,
 } from "../components/ArtworkMarker";
+import { useAuth } from "../context/AuthContext";
 
 const FOUND_STORAGE_KEY = "artscape.foundIds";
-const VERIFY_RADIUS_M = 200;  // THIS WAS 25 !!!
-const USER_ID = "67";
+const VERIFY_RADIUS_M = 200;
 
 function haversineMeters(lat1, lon1, lat2, lon2) {
 	const R = 6371000;
@@ -21,8 +22,8 @@ function haversineMeters(lat1, lon1, lat2, lon2) {
 	const a =
 		Math.sin(dLat / 2) ** 2 +
 		Math.cos(toRad(lat1)) *
-		Math.cos(toRad(lat2)) *
-		Math.sin(dLon / 2) ** 2;
+			Math.cos(toRad(lat2)) *
+			Math.sin(dLon / 2) ** 2;
 	return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
@@ -42,7 +43,8 @@ function getCurrentPosition() {
 
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN;
 
-export default function MapPage() {
+export default function MapPage({ isGuest = false }) {
+	const { user } = useAuth();
 	const mapContainer = useRef(null);
 	const map = useRef(null);
 	const markersRef = useRef([]);
@@ -52,16 +54,22 @@ export default function MapPage() {
 	const [allArtworks, setAllArtworks] = useState([]);
 	const [sidebarOpen, setSidebarOpen] = useState(false);
 	const [foundIds, setFoundIds] = useState(new Set());
+	const [nearbyArtworks, setNearbyArtworks] = useState([]);
+
 	useEffect(() => {
 		const fetchData = async () => {
+			if (!user) {
+				setFoundIds(new Set());
+				return;
+			}
 			try {
-				const res = await fetch(`/api/artworks/visited_artworks?user_id=${USER_ID}`);
-
+				const res = await fetch("/api/artworks/visited", {
+					credentials: "include",
+				});
 				if (!res.ok) {
 					setFoundIds(new Set());
 					return;
 				}
-
 				const data = await res.json();
 				setFoundIds(new Set(data ?? []));
 			} catch (err) {
@@ -69,23 +77,22 @@ export default function MapPage() {
 				setFoundIds(new Set());
 			}
 		};
-
 		fetchData();
 	}, []);
 
 	useEffect(() => {
-		localStorage.setItem(
-			FOUND_STORAGE_KEY,
-			JSON.stringify([...foundIds])
-		);
+		localStorage.setItem(FOUND_STORAGE_KEY, JSON.stringify([...foundIds]));
 	}, [foundIds]);
 
 	async function markFound(objectid) {
+		if (!user) return;
 		try {
-			await fetch(`/api/artworks/update_visited_artwork?user_id=${USER_ID}&object_id=${objectid}`, {
+			await fetch("/api/artworks/visited", {
 				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				credentials: "include",
+				body: JSON.stringify({ objectid }),
 			});
-
 			setFoundIds((prev) => {
 				if (prev.has(objectid)) return prev;
 				const next = new Set(prev);
@@ -132,66 +139,15 @@ export default function MapPage() {
 			}
 		} catch (e) {
 			console.error("Verify failed:", e);
-			alert("Couldn't get your location. Enable location services and try again.");
+			alert(
+				"Couldn't get your location. Enable location services and try again.",
+			);
 		}
 	}
 
-	window.verifyArtwork = (id) => {
-		const art = allArtworks.find((a) => a.objectid === id);
-		if (art) verifyArtwork(art);
-	};
-
-	function clearMarkers() {
+function clearMarkers() {
 		markersRef.current.forEach((m) => m.remove());
 		markersRef.current = [];
-	}
-
-	async function toggleFavorite(id, buttonElement) {
-		try {
-			const res = await fetch(`/api/artworks/favorite?objectid=${id}`, {
-				method: "POST",
-			});
-
-			if (res.ok) {
-				const data = await res.json();
-				if (data.favorited) {
-					buttonElement.innerText = "💔 Unfavorite";
-				} else {
-					buttonElement.innerText = "❤️ Favorite";
-				}
-			}
-			alert("Updated favorites!");
-		} catch (error) {
-			console.error("Failed to update favorite:", error);
-			alert("Something went wrong. Please try again.");
-		}
-	}
-	window.toggleFavorite = toggleFavorite;
-
-	function getDetailedHTML(art) {
-		const isFav = art.favorited;
-		const buttonLabel = isFav ? "💔 Unfavorite" : "❤️ Favorite";
-		const isFound = foundIds.has(art.objectid);
-		const verifyLabel = isFound ? "✅ Found" : "📍 Verify I'm Here";
-		const thumbnail = art.image_url
-			? `${art.image_url}/full/600,/0/default.jpg`
-			: null;
-
-		return `
-            <div style="width: 100%; min-width:220px; font-family: sans-serif; line-height: 1.5;">
-                <b style="color: #FF5733; font-size: 12px; letter-spacing: 1px">CLOSEST ARTWORK</b>
-                <h3 style="margin: 8px 0; font-size: 1.2rem">${art.title || "Untitled"}</h3>
-                <p style="margin: 5px 0; font-size: 0.9rem;"><b>Date:</b> ${art.date_range || "N/A"}</p>
-                ${thumbnail ? `<img src="${thumbnail}" style="width:100%; height: auto; object-fit: contain; border-radius:8px; margin: 10px 0;"/>` : ""}
-                <p style="font-size: 15px; line-height: 1.4; margin-bottom: 20px">${art.description || ""}</p>
-                <button onclick="verifyArtwork(${art.objectid})" ${isFound ? "disabled" : ""} style="width:100%; padding:10px; margin-bottom:8px; cursor: ${isFound ? "default" : "pointer"}; background: ${isFound ? "#e6f7ea" : "#fff0ec"}; border: 1px solid ${isFound ? "#9bd4ab" : "#ffb199"}; border-radius: 6px; font-weight: bold; color: #333;">
-                    ${verifyLabel}
-                </button>
-                <button onclick="toggleFavorite(${art.objectid}, this)" style="width:100%; padding:10px; cursor: pointer; background: #f8f8f8; border: 1px solid #ddd; border-radius: 6px; font-weight: bold;">
-                    ${buttonLabel}
-                </button>
-            </div>
-        `;
 	}
 
 	async function loadArtworks(lat, lon) {
@@ -203,57 +159,56 @@ export default function MapPage() {
 			const nearbyData = await nearbyRes.json();
 			const allData = await allRes.json();
 			setAllArtworks(allData);
-			const nearbyIds = new Set(nearbyData.map((a) => a.objectid));
 
+			// Compute distances for NearestArtworksPanel (auth only)
+			const nearbyWithDist = nearbyData.map((a) => ({
+				...a,
+				distance: Math.round(haversineMeters(lat, lon, a.lat, a.lon)),
+			}));
+			setNearbyArtworks(nearbyWithDist.slice(0, 3));
+
+			const nearbyIds = new Set(nearbyData.map((a) => a.objectid));
 			clearMarkers();
 
-			allData.forEach((art) => {
-				if (nearbyIds.has(art.objectid)) return;
-
-				const el = createAllMarkerEl();
-				const marker = new mapboxgl.Marker(el)
-					.setLngLat([art.lon, art.lat])
-					.addTo(map.current);
-
-				if (window.innerWidth > 600) {
-					marker.setPopup(
-						new mapboxgl.Popup({
-							offset: 25,
-							closeButton: false,
-							className: "compact-popup",
-						}).setHTML(
-							`<h4>${art.title || "Unknown"}</h4><p>📍 Walk closer to reveal details.</p>`,
-						),
+			if (isGuest) {
+				// Guest: every artwork uses nearby-style marker, every click opens detailed sheet
+				allData.forEach((art) => {
+					const el = createNearbyMarkerEl();
+					const marker = new mapboxgl.Marker(el)
+						.setLngLat([art.lon, art.lat])
+						.addTo(map.current);
+					el.addEventListener("click", () =>
+						setSheetContent({ art, type: "detailed" }),
 					);
-				} else {
+					markersRef.current.push(marker);
+				});
+			} else {
+				// Auth: all markers use BottomSheet
+				allData.forEach((art) => {
+					if (nearbyIds.has(art.objectid)) return;
+
+					const el = createAllMarkerEl();
+					const marker = new mapboxgl.Marker(el)
+						.setLngLat([art.lon, art.lat])
+						.addTo(map.current);
 					el.addEventListener("click", () =>
 						setSheetContent({ art, type: "succinct" }),
 					);
-				}
-				markersRef.current.push(marker);
-			});
+					markersRef.current.push(marker);
+				});
 
-			nearbyData.forEach((art) => {
-				const el = createNearbyMarkerEl();
-				const marker = new mapboxgl.Marker(el)
-					.setLngLat([art.lon, art.lat])
-					.addTo(map.current);
-
-				if (window.innerWidth > 600) {
-					marker.setPopup(
-						new mapboxgl.Popup({
-							offset: 25,
-							focusAfterOpen: false,
-						}).setHTML(getDetailedHTML(art)),
-					);
-				} else {
+				nearbyData.forEach((art) => {
+					const el = createNearbyMarkerEl();
+					const marker = new mapboxgl.Marker(el)
+						.setLngLat([art.lon, art.lat])
+						.addTo(map.current);
 					el.addEventListener("click", (e) => {
 						e.stopPropagation();
 						setSheetContent({ art, type: "detailed" });
 					});
-				}
-				markersRef.current.push(marker);
-			});
+					markersRef.current.push(marker);
+				});
+			}
 		} catch (e) {
 			console.error("Could not load map data", e);
 		}
@@ -305,38 +260,21 @@ export default function MapPage() {
 		<>
 			<div
 				ref={mapContainer}
-				style={{
-					position: "absolute",
-					top: 0,
-					bottom: 0,
-					width: "100%",
-				}}
+				className={`map-container ${isGuest ? "map-container-guest" : "map-container-auth"}`}
 			/>
-			<button
-				onClick={() => setSidebarOpen((v) => !v)}
-				style={{
-					position: "fixed",
-					top: 16,
-					right: 16,
-					zIndex: 999,
-					padding: "10px 14px",
-					background: "#fff",
-					border: "1px solid #ddd",
-					borderRadius: 8,
-					boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
-					cursor: "pointer",
-					fontWeight: 600,
-					fontFamily: "sans-serif",
-				}}
-			>
-				🔍 Hunt ({foundIds.size}/{allArtworks.length})
-			</button>
 			<ScavengerSidebar
 				open={sidebarOpen}
 				onClose={() => setSidebarOpen(false)}
 				artworks={allArtworks}
 				foundIds={foundIds}
 			/>
+			{!isGuest && (
+				<NearestArtworksPanel
+					artworks={nearbyArtworks}
+					onSelect={(art) => setSheetContent({ art, type: "detailed" })}
+					hidden={!!sheetContent}
+				/>
+			)}
 			<BottomSheet
 				key={sheetContent?.art?.objectid}
 				content={sheetContent}
@@ -347,6 +285,8 @@ export default function MapPage() {
 						? foundIds.has(sheetContent.art.objectid)
 						: false
 				}
+				isGuest={isGuest}
+				user={user}
 			/>
 		</>
 	);

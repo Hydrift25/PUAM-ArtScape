@@ -126,3 +126,41 @@ def favorite_artwork(objectid):
             new_status = cur.fetchone()[0]
             conn.commit()
             return new_status
+
+
+def get_visited_artworks(user_id):
+    query = """
+        SELECT user_data.visited_objects
+        FROM user_data
+        WHERE user_data.user_id = %s;
+    """
+
+    with contextlib.closing(
+        psycopg.connect(db_url)) as conn:
+        with contextlib.closing(conn.cursor()) as cur:
+            cur.execute(query, (user_id,))
+            row = cur.fetchone()
+
+    if not row:
+        return None
+
+    return row[0]
+
+# NEED TO HANDLE DUPLICATES???
+def update_visited_artwork(user_id, object_id):
+    query = """
+        UPDATE user_data
+        SET visited_objects =
+            COALESCE(visited_objects, '[]'::jsonb)
+            || jsonb_build_array(%s)
+        WHERE user_id = %s;
+    """
+
+    with contextlib.closing(
+        psycopg.connect(db_url)) as conn:
+        with contextlib.closing(conn.cursor()) as cur:
+            print("USER ID, OBJ ID")
+            print(user_id)
+            print(object_id)
+            cur.execute(query, (object_id, user_id))
+            conn.commit()

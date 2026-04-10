@@ -44,3 +44,24 @@ def serve_react(path):
     if path and os.path.exists(target):
         return send_from_directory(dist, path)
     return send_from_directory(dist, 'index.html')
+
+@app.route("/api/artworks/visited_artworks", methods=['GET'])
+def visited_artworks():
+    user_id = str(flask.request.args.get("user_id"))
+    if not user_id:
+        return flask.jsonify({"error": "No User ID provided"}), 400
+
+    visited_artworks = db.get_visited_artworks(user_id)
+
+    return flask.jsonify(visited_artworks)
+
+@app.route("/api/artworks/update_visited_artwork", methods=['POST'])
+def update_visited_artwork():
+    user_id = str(flask.request.args.get("user_id"))
+    object_id = int(flask.request.args.get("object_id"))
+    if not user_id or not object_id:
+        return flask.jsonify({"error": "No User ID/Object ID provided"}), 400
+
+    db.update_visited_artwork(user_id, object_id)
+
+    return flask.jsonify(True)

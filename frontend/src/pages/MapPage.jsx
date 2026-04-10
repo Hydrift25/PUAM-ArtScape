@@ -10,7 +10,8 @@ import {
 } from "../components/ArtworkMarker";
 
 const FOUND_STORAGE_KEY = "artscape.foundIds";
-const VERIFY_RADIUS_M = 25;
+const VERIFY_RADIUS_M = 200;  // THIS WAS 25 !!!
+const USER_ID = "67";
 
 function haversineMeters(lat1, lon1, lat2, lon2) {
 	const R = 6371000;
@@ -20,8 +21,8 @@ function haversineMeters(lat1, lon1, lat2, lon2) {
 	const a =
 		Math.sin(dLat / 2) ** 2 +
 		Math.cos(toRad(lat1)) *
-			Math.cos(toRad(lat2)) *
-			Math.sin(dLon / 2) ** 2;
+		Math.cos(toRad(lat2)) *
+		Math.sin(dLon / 2) ** 2;
 	return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
@@ -50,29 +51,51 @@ export default function MapPage() {
 	const [sheetContent, setSheetContent] = useState(null);
 	const [allArtworks, setAllArtworks] = useState([]);
 	const [sidebarOpen, setSidebarOpen] = useState(false);
-	const [foundIds, setFoundIds] = useState(() => {
-		try {
-			const raw = localStorage.getItem(FOUND_STORAGE_KEY);
-			return new Set(raw ? JSON.parse(raw) : []);
-		} catch {
-			return new Set();
-		}
-	});
+	const [foundIds, setFoundIds] = useState(new Set());
+	useEffect(() => {
+		const fetchData = async () => {
+			try {
+				const res = await fetch(`/api/artworks/visited_artworks?user_id=${USER_ID}`);
+
+				if (!res.ok) {
+					setFoundIds(new Set());
+					return;
+				}
+
+				const data = await res.json();
+				setFoundIds(new Set(data ?? []));
+			} catch (err) {
+				console.error("Failed to fetch visited artworks:", err);
+				setFoundIds(new Set());
+			}
+		};
+
+		fetchData();
+	}, []);
 
 	useEffect(() => {
 		localStorage.setItem(
 			FOUND_STORAGE_KEY,
-			JSON.stringify([...foundIds]),
+			JSON.stringify([...foundIds])
 		);
 	}, [foundIds]);
 
-	function markFound(objectid) {
-		setFoundIds((prev) => {
-			if (prev.has(objectid)) return prev;
-			const next = new Set(prev);
-			next.add(objectid);
-			return next;
-		});
+	async function markFound(objectid) {
+		try {
+			await fetch(`/api/artworks/update_visited_artwork?user_id=${USER_ID}&object_id=${objectid}`, {
+				method: "POST",
+			});
+
+			setFoundIds((prev) => {
+				if (prev.has(objectid)) return prev;
+				const next = new Set(prev);
+				next.add(objectid);
+				return next;
+			});
+		} catch (error) {
+			console.error("Failed to update visited artworks:", error);
+			alert("Something went wrong. Please try again.");
+		}
 	}
 
 	async function verifyArtwork(art) {

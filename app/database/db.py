@@ -1,16 +1,16 @@
 import os
 import contextlib
 import psycopg
-import math
-from decimal import Decimal
+from dotenv import load_dotenv
 
 #-----------------------------------------------------------------------
 
-DATABASE_URL = "DATABASE_URL_REMOVED"
+load_dotenv()
+db_url = os.getenv("DATABASE_URL")
 
 #-----------------------------------------------------------------------
 
-def get_all_artworks(limit=50):
+def get_all_artworks():
     """
     Returns artworks with location + metadata.
     """
@@ -22,18 +22,16 @@ def get_all_artworks(limit=50):
             d.title,
             d.date_range,
             d.description,
-            d.image_url,
-            d.favorited
+            d.image_url
         FROM geo_prelim g
         LEFT JOIN object_details d
-        ON g.objectid = d.objectid
-        LIMIT %s;
+        ON g.objectid = d.objectid;
     """
 
     with contextlib.closing(
-        psycopg.connect(DATABASE_URL)) as conn:
+        psycopg.connect(db_url)) as conn:
         with contextlib.closing(conn.cursor()) as cur:
-            cur.execute(query, (limit,))
+            cur.execute(query)
             rows = cur.fetchall()
 
     return [
@@ -45,7 +43,6 @@ def get_all_artworks(limit=50):
             "date_range": r[4],
             "description": r[5],
             "image_url": r[6],
-            "favorited": r[7],
         }
         for r in rows
     ]
@@ -60,8 +57,7 @@ def get_artwork_by_id(objectid):
             d.title,
             d.date_range,
             d.description,
-            d.image_url,
-            d.favorited
+            d.image_url
         FROM geo_prelim g
         LEFT JOIN object_details d
         ON g.objectid = d.objectid
@@ -69,7 +65,7 @@ def get_artwork_by_id(objectid):
     """
 
     with contextlib.closing(
-        psycopg.connect(DATABASE_URL)) as conn:
+        psycopg.connect(db_url)) as conn:
         with contextlib.closing(conn.cursor()) as cur:
             cur.execute(query, (objectid,))
             row = cur.fetchone()
@@ -85,43 +81,341 @@ def get_artwork_by_id(objectid):
         "date_range": row[4],
         "description": row[5],
         "image_url": row[6],
-        "favorited": row[7]
     }
 
 
-def haversine(lat1, lon1, lat2, lon2):
-    R = 6371000  # meters
-    phi1, phi2 = math.radians(lat1), math.radians(lat2)
-    dphi = math.radians(Decimal(lat2) - Decimal(lat1))
-    dlambda = math.radians(Decimal(lon2) - Decimal(lon1))
-
-    a = math.sin(dphi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(dlambda/2)**2
-    return 2 * R * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-
-
 def get_nearby_artworks(user_lat, user_lon, limit=3):
-    artworks = get_all_artworks(limit=100)  # small dataset for now
+    query = """
+        SELECT
+            g.objectid,
+            g.lat,
+            g.long,
+            d.title,
+            d.date_range,
+            d.description,
+            d.image_url,
+            ST_Distance(
+                g.geom::geography,
+                ST_SetSRID(ST_MakePoint(%s, %s), 4326)::geography
+            ) AS distance_m
+        FROM geo_prelim g
+        LEFT JOIN object_details d ON g.objectid = d.objectid
+        ORDER BY g.geom <-> ST_SetSRID(ST_MakePoint(%s, %s), 4326)
+        LIMIT %s;
+    """
 
-    for art in artworks:
-        art["distance"] = haversine(user_lat, user_lon, art["lat"], art["lon"])
+    with contextlib.closing(psycopg.connect(db_url)) as conn:
+        with contextlib.closing(conn.cursor()) as cur:
+            cur.execute(query, (user_lon, user_lat, user_lon, user_lat, limit))
+            rows = cur.fetchall()
 
-    artworks.sort(key=lambda x: x["distance"])
+    return [
+        {
+            "objectid": r[0],
+            "lat": r[1],
+            "lon": r[2],
+            "title": r[3],
+            "date_range": r[4],
+            "description": r[5],
+            "image_url": r[6],
+            "distance_m": round(float(r[7]), 1),
+        }
+        for r in rows
+    ]
 
-    return artworks[:limit]
+
+def toggle_favorite(user_id, objectid):
+    check_query = "SELECT id FROM favorites WHERE user_id = %s AND objectid = %s;"
+    insert_query = "INSERT INTO favorites (user_id, objectid) VALUES (%s, %s);"
+    delete_query = "DELETE FROM favorites WHERE user_id = %s AND objectid = %s;"
+
+    with contextlib.closing(psycopg.connect(db_url)) as conn:
+        with contextlib.closing(conn.cursor()) as cur:
+            cur.execute(check_query, (user_id, objectid))
+            exists = cur.fetchone()
+            if exists:
+                cur.execute(delete_query, (user_id, objectid))
+                conn.commit()
+                return False
+            else:
+                cur.execute(insert_query, (user_id, objectid))
+                conn.commit()
+                return True
 
 
-def favorite_artwork(objectid):
-    update_query = """
-                    UPDATE object_details
-                    SET favorited = NOT COALESCE(favorited, false)
-                    WHERE objectid = %s
-                    RETURNING favorited;
-                """
+def get_favorites(user_id):
+    query = """
+        SELECT f.objectid, g.lat, g.long, d.title, d.image_url, f.saved_at
+        FROM favorites f
+        JOIN geo_prelim g ON f.objectid = g.objectid
+        LEFT JOIN object_details d ON f.objectid = d.objectid
+        WHERE f.user_id = %s
+        ORDER BY f.saved_at DESC;
+    """
+    with contextlib.closing(psycopg.connect(db_url)) as conn:
+        with contextlib.closing(conn.cursor()) as cur:
+            cur.execute(query, (user_id,))
+            rows = cur.fetchall()
+
+    return [
+        {
+            "objectid": r[0],
+            "lat": r[1],
+            "lon": r[2],
+            "title": r[3],
+            "image_url": r[4],
+            "saved_at": r[5].isoformat() if r[5] else None,
+        }
+        for r in rows
+    ]
+
+
+def get_visited_artworks(user_id):
+    query = """
+        SELECT s.objectid, g.lat, g.long, d.title, d.image_url, s.found_at
+        FROM scavenger_hunt_finds s
+        JOIN geo_prelim g ON s.objectid = g.objectid
+        LEFT JOIN object_details d ON s.objectid = d.objectid
+        WHERE s.user_id = %s
+        ORDER BY s.found_at DESC;
+    """
+    with contextlib.closing(psycopg.connect(db_url)) as conn:
+        with contextlib.closing(conn.cursor()) as cur:
+            cur.execute(query, (user_id,))
+            rows = cur.fetchall()
+
+    return [
+        {
+            "objectid": r[0],
+            "lat": r[1],
+            "lon": r[2],
+            "title": r[3],
+            "image_url": r[4],
+            "found_at": r[5].isoformat() if r[5] else None,
+        }
+        for r in rows
+    ]
+
+
+def update_visited_artwork(user_id, objectid):
+    query = """
+        INSERT INTO scavenger_hunt_finds (user_id, objectid)
+        VALUES (%s, %s)
+        ON CONFLICT (user_id, objectid) DO NOTHING;
+    """
+
+    with contextlib.closing(psycopg.connect(db_url)) as conn:
+        with contextlib.closing(conn.cursor()) as cur:
+            cur.execute(query, (user_id, objectid))
+            conn.commit()
+
+
+def record_find(user_id, objectid):
+    query = """
+        INSERT INTO scavenger_hunt_finds (user_id, objectid, verified)
+        VALUES (%s, %s, FALSE)
+        ON CONFLICT (user_id, objectid) DO NOTHING;
+    """
+    with contextlib.closing(psycopg.connect(db_url)) as conn:
+        with contextlib.closing(conn.cursor()) as cur:
+            cur.execute(query, (user_id, objectid))
+            conn.commit()
+
+
+def verify_find(user_id, objectid):
+    query = """
+        UPDATE scavenger_hunt_finds
+        SET verified = TRUE
+        WHERE user_id = %s AND objectid = %s;
+    """
+    with contextlib.closing(psycopg.connect(db_url)) as conn:
+        with contextlib.closing(conn.cursor()) as cur:
+            cur.execute(query, (user_id, objectid))
+            conn.commit()
+
+
+def get_finds(user_id):
+    query = """
+        SELECT
+            s.objectid,
+            s.verified,
+            s.found_at,
+            d.title,
+            d.image_url
+        FROM scavenger_hunt_finds s
+        LEFT JOIN object_details d ON s.objectid = d.objectid
+        WHERE s.user_id = %s
+        ORDER BY s.found_at DESC;
+    """
+    with contextlib.closing(psycopg.connect(db_url)) as conn:
+        with contextlib.closing(conn.cursor()) as cur:
+            cur.execute(query, (user_id,))
+            rows = cur.fetchall()
+
+    return [
+        {
+            "objectid": r[0],
+            "verified": r[1],
+            "found_at": r[2].isoformat() if r[2] else None,
+            "title": r[3],
+            "image_url": r[4],
+        }
+        for r in rows
+    ]
+
+
+def get_scavenger_stats(user_id):
+    query = """
+        SELECT
+            COUNT(*)                          AS total_finds,
+            COUNT(*) FILTER (WHERE verified)  AS verified_finds,
+            (SELECT COUNT(*) FROM favorites WHERE user_id = %s) AS favorites_count
+        FROM scavenger_hunt_finds
+        WHERE user_id = %s;
+    """
+    with contextlib.closing(psycopg.connect(db_url)) as conn:
+        with contextlib.closing(conn.cursor()) as cur:
+            cur.execute(query, (user_id, user_id))
+            row = cur.fetchone()
+
+    total_finds    = int(row[0])
+    verified_finds = int(row[1])
+    favorites_count = int(row[2])
+    unverified_finds = total_finds - verified_finds
+    total_score = verified_finds * 10 + unverified_finds * 3 + favorites_count * 1
+
+    return {
+        "total_finds":     total_finds,
+        "verified_finds":  verified_finds,
+        "favorites_count": favorites_count,
+        "total_score":     total_score,
+    }
+
+
+def get_leaderboard(limit=20):
+    query = """
+        WITH scores AS (
+            SELECT
+                u.id,
+                u.display_name,
+                u.email,
+                COUNT(s.objectid)                                   AS total_finds,
+                COUNT(s.objectid) FILTER (WHERE s.verified)         AS verified_finds,
+                COUNT(s.objectid) FILTER (WHERE NOT s.verified)     AS unverified_finds,
+                COUNT(s.objectid) FILTER (WHERE s.verified)     * 10
+                + COUNT(s.objectid) FILTER (WHERE NOT s.verified) * 5  AS score
+            FROM users u
+            LEFT JOIN scavenger_hunt_finds s ON u.id = s.user_id
+            GROUP BY u.id, u.display_name, u.email
+        )
+        SELECT
+            id,
+            display_name,
+            email,
+            total_finds,
+            verified_finds,
+            unverified_finds,
+            score,
+            RANK() OVER (ORDER BY score DESC) AS rank
+        FROM scores
+        ORDER BY score DESC
+        LIMIT %s;
+    """
+    with contextlib.closing(psycopg.connect(db_url)) as conn:
+        with contextlib.closing(conn.cursor()) as cur:
+            cur.execute(query, (limit,))
+            rows = cur.fetchall()
+
+    return [
+        {
+            "id":               r[0],
+            "display_name":     r[1],
+            "email":            r[2],
+            "total_finds":      int(r[3]),
+            "verified_finds":   int(r[4]),
+            "unverified_finds": int(r[5]),
+            "score":            int(r[6]),
+            "rank":             int(r[7]),
+        }
+        for r in rows
+    ]
+
+
+def get_leaderboard_me(user_id):
+    query = """
+        WITH scores AS (
+            SELECT
+                u.id,
+                u.display_name,
+                u.email,
+                COUNT(s.objectid)                                   AS total_finds,
+                COUNT(s.objectid) FILTER (WHERE s.verified)         AS verified_finds,
+                COUNT(s.objectid) FILTER (WHERE NOT s.verified)     AS unverified_finds,
+                COUNT(s.objectid) FILTER (WHERE s.verified)     * 10
+                + COUNT(s.objectid) FILTER (WHERE NOT s.verified) * 5  AS score
+            FROM users u
+            LEFT JOIN scavenger_hunt_finds s ON u.id = s.user_id
+            GROUP BY u.id, u.display_name, u.email
+        ),
+        ranked AS (
+            SELECT *, RANK() OVER (ORDER BY score DESC) AS rank
+            FROM scores
+        )
+        SELECT
+            id,
+            display_name,
+            email,
+            total_finds,
+            verified_finds,
+            unverified_finds,
+            score,
+            rank
+        FROM ranked
+        WHERE id = %s;
+    """
+    with contextlib.closing(psycopg.connect(db_url)) as conn:
+        with contextlib.closing(conn.cursor()) as cur:
+            cur.execute(query, (user_id,))
+            row = cur.fetchone()
+
+    if not row:
+        return None
+
+    return {
+        "id":               row[0],
+        "display_name":     row[1],
+        "email":            row[2],
+        "total_finds":      int(row[3]),
+        "verified_finds":   int(row[4]),
+        "unverified_finds": int(row[5]),
+        "score":            int(row[6]),
+        "rank":             int(row[7]),
+    }
+
+
+def get_or_create_user(google_sub, email, display_name, avatar_url):
+    query = """
+        INSERT INTO users (google_sub, email, display_name, avatar_url)
+        VALUES (%s, %s, %s, %s)
+        ON CONFLICT (google_sub) DO UPDATE
+            SET email        = EXCLUDED.email,
+                display_name = EXCLUDED.display_name,
+                avatar_url   = EXCLUDED.avatar_url
+        RETURNING id, google_sub, email, display_name, avatar_url, created_at;
+    """
 
     with contextlib.closing(
-        psycopg.connect(DATABASE_URL)) as conn:
+        psycopg.connect(db_url)) as conn:
         with contextlib.closing(conn.cursor()) as cur:
-            cur.execute(update_query, (objectid,))
-            new_status = cur.fetchone()[0]
+            cur.execute(query, (google_sub, email, display_name, avatar_url))
+            row = cur.fetchone()
             conn.commit()
-            return new_status
+
+    return {
+        "id":           row[0],
+        "google_sub":   row[1],
+        "email":        row[2],
+        "display_name": row[3],
+        "avatar_url":   row[4],
+        "created_at":   row[5].isoformat() if row[5] else None,
+    }

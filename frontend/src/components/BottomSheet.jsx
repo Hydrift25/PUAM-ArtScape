@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-export default function BottomSheet({ content, onClose }) {
+export default function BottomSheet({ content, onClose, onVerify, isFound }) {
 	const [favorited, setFavorited] = useState(
 		content?.art?.favorited ?? false,
 	);
@@ -81,6 +81,22 @@ export default function BottomSheet({ content, onClose }) {
 					
 						dangerouslySetInnerHTML={{__html: art.description || ""}}
 					/>
+					<button
+						onClick={() => onVerify && onVerify(art)}
+						disabled={isFound}
+						style={{
+							width: "100%",
+							padding: "10px",
+							marginBottom: "8px",
+							cursor: isFound ? "default" : "pointer",
+							background: isFound ? "#e6f7ea" : "#fff0ec",
+							border: `1px solid ${isFound ? "#9bd4ab" : "#ffb199"}`,
+							borderRadius: "6px",
+							fontWeight: "bold",
+						}}
+					>
+						{isFound ? "✅ Found" : "📍 Verify I'm Here"}
+					</button>
 					<button
 						onClick={toggleFavorite}
 						style={{

@@ -126,6 +126,9 @@ def scavenger_stats():
 
 @app.route("/api/leaderboard", methods=['GET'])
 def leaderboard():
+    user = session.get("user")
+    if not user:
+        return flask.jsonify({"error": "Not logged in"}), 401
     return flask.jsonify(db.get_leaderboard())
 
 @app.route("/api/leaderboard/me", methods=['GET'])

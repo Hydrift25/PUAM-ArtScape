@@ -1311,9 +1311,9 @@ body {
     margin-bottom: 6px;
 }
 
-.podium-gold .lb-podium-avatar  { background: #E8450A; width: 60px; height: 60px; font-size: 1.1rem; }
-.podium-silver .lb-podium-avatar { background: #a0aec0; }
-.podium-bronze .lb-podium-avatar { background: #b7835c; }
+.podium-gold .lb-podium-avatar  { background: #FFD700; color: #1a1a1a; width: 60px; height: 60px; font-size: 1.1rem; }
+.podium-silver .lb-podium-avatar { background: #C0C0C0; color: #1a1a1a; }
+.podium-bronze .lb-podium-avatar { background: #CD7F32; }
 
 .lb-podium-name {
     font-size: 0.82rem;
@@ -1338,9 +1338,9 @@ body {
     color: #fff;
 }
 
-.podium-gold .lb-podium-base  { background: #E8450A; padding: 10px 0; }
-.podium-silver .lb-podium-base { background: #a0aec0; }
-.podium-bronze .lb-podium-base { background: #b7835c; }
+.podium-gold .lb-podium-base  { background: #FFD700; color: #1a1a1a; padding: 10px 0; }
+.podium-silver .lb-podium-base { background: #C0C0C0; color: #1a1a1a; }
+.podium-bronze .lb-podium-base { background: #CD7F32; }
 
 .lb-rankings-card {
     padding: 14px 16px;
@@ -1447,6 +1447,14 @@ body {
 
 .lb-how-orange { background: #fff0ec; }
 .lb-how-blue   { background: #EBF4FF; }
+
+.lb-loading,
+.lb-empty {
+    font-size: 0.9rem;
+    color: #888;
+    text-align: center;
+    padding: 32px 16px;
+}
 
 /* ============================================================
    PROFILE PAGE

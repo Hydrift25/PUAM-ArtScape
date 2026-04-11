@@ -3,6 +3,7 @@ import flask
 from flask import send_from_directory, session, redirect, url_for
 from authlib.integrations.flask_client import OAuth
 from flask_cors import CORS
+from flask_compress import Compress
 from app.database import db
 
 #-----------------------------------------------------------------------
@@ -13,6 +14,7 @@ app = flask.Flask(
     static_url_path=''
 )
 app.secret_key = os.getenv("APP_SECRET_KEY")
+Compress(app)
 frontend_url = os.getenv("FRONTEND_URL")
 if frontend_url:
     CORS(app, supports_credentials=True, origins=frontend_url)
@@ -35,7 +37,9 @@ oauth.register(
 @app.route("/api/artworks", methods=['GET'])
 def artworks():
     data = db.get_all_artworks()
-    return flask.jsonify(data)
+    resp = flask.jsonify(data)
+    resp.headers['Cache-Control'] = 'public, max-age=300'
+    return resp
 
 @app.route("/api/artworks/nearby", methods=['GET'])
 def nearby():
@@ -170,6 +174,6 @@ def auth_logout():
 @app.route("/api/auth/me")
 def auth_me():
     user = session.get("user")
-    if user:
-        return flask.jsonify(user)
-    return flask.jsonify({"user": None})
+    resp = flask.jsonify(user if user else {"user": None})
+    resp.headers['Cache-Control'] = 'private, max-age=60'
+    return resp

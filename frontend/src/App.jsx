@@ -1,10 +1,12 @@
-import { BrowserRouter, Routes, Route, NavLink } from "react-router-dom";
+import { Suspense, lazy, useEffect, useState } from "react";
+import { BrowserRouter, Routes, Route, NavLink, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import MapPage from "./pages/MapPage";
-import AuthPage from "./pages/AuthPage";
-import ScavengerPage from "./pages/ScavengerPage";
-import LeaderboardPage from "./pages/LeaderboardPage";
-import ProfilePage from "./pages/ProfilePage";
+
+const AuthPage = lazy(() => import("./pages/AuthPage"));
+const ScavengerPage = lazy(() => import("./pages/ScavengerPage"));
+const LeaderboardPage = lazy(() => import("./pages/LeaderboardPage"));
+const ProfilePage = lazy(() => import("./pages/ProfilePage"));
 
 function getInitials(name) {
 	if (!name) return "?";
@@ -131,10 +133,29 @@ function BottomNav() {
 	);
 }
 
-function AppContent() {
-	const { user, loading, guest } = useAuth();
+const lazyFallback = (
+	<div className="auth-spinner-wrap">
+		<div className="auth-spinner" />
+	</div>
+);
 
-	if (loading) {
+function AppContent() {
+	const { user, loading: authLoading, guest } = useAuth();
+	const location = useLocation();
+	const [artworks, setArtworks] = useState([]);
+	const [artworksLoading, setArtworksLoading] = useState(true);
+
+	useEffect(() => {
+		fetch("/api/artworks")
+			.then((r) => r.json())
+			.then((data) => {
+				setArtworks(data);
+				setArtworksLoading(false);
+			})
+			.catch(() => setArtworksLoading(false));
+	}, []);
+
+	if (authLoading) {
 		return (
 			<div className="auth-spinner-wrap">
 				<div className="auth-spinner" />
@@ -143,38 +164,60 @@ function AppContent() {
 	}
 
 	if (!user && !guest) {
-		return <AuthPage />;
+		return (
+			<Suspense fallback={lazyFallback}>
+				<AuthPage />
+			</Suspense>
+		);
 	}
 
 	const isGuest = !user && guest;
 
+	if (isGuest) {
+		return (
+			<>
+				<GuestNavbar />
+				{artworksLoading && (
+					<div style={{ position: "fixed", top: 60, left: "50%", transform: "translateX(-50%)", zIndex: 100 }}>
+						<div className="auth-spinner" />
+					</div>
+				)}
+				<MapPage isGuest={true} artworks={artworks} isVisible={true} />
+			</>
+		);
+	}
+
+	const isMapPage = location.pathname === "/";
+
 	return (
-		<BrowserRouter>
-			{isGuest ? (
-				<>
-					<GuestNavbar />
-					<MapPage isGuest={true} />
-				</>
-			) : (
-				<>
-					<AuthNavbar />
-					<Routes>
-						<Route path="/" element={<MapPage isGuest={false} />} />
-						<Route path="/hunt" element={<ScavengerPage />} />
-						<Route path="/leaderboard" element={<LeaderboardPage />} />
-						<Route path="/profile" element={<ProfilePage />} />
-					</Routes>
-					<BottomNav />
-				</>
+		<>
+			<AuthNavbar />
+			{artworksLoading && (
+				<div style={{ position: "fixed", top: 60, left: "50%", transform: "translateX(-50%)", zIndex: 100 }}>
+					<div className="auth-spinner" />
+				</div>
 			)}
-		</BrowserRouter>
+			<div style={{ display: isMapPage ? "block" : "none" }}>
+				<MapPage isGuest={false} artworks={artworks} isVisible={isMapPage} />
+			</div>
+			<Suspense fallback={lazyFallback}>
+				<Routes>
+					<Route path="/hunt" element={<ScavengerPage artworks={artworks} />} />
+					<Route path="/leaderboard" element={<LeaderboardPage />} />
+					<Route path="/profile" element={<ProfilePage />} />
+				</Routes>
+			</Suspense>
+			<BottomNav />
+		</>
 	);
 }
 
 export default function App() {
 	return (
-		<AuthProvider>
-			<AppContent />
-		</AuthProvider>
+		<BrowserRouter>
+			<AuthProvider>
+				<AppContent />
+			</AuthProvider>
+		</BrowserRouter>
 	);
 }

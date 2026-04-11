@@ -5,4 +5,5 @@ python-dotenv==1.2.2
 Requests==2.33.1
 Authlib==1.5.2
 flask-cors==5.0.1
+flask-compress==1.15
 gunicorn

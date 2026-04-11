@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 
-export default function ScavengerPage() {
+export default function ScavengerPage({ artworks = [] }) {
 	const { user, login } = useAuth();
-	const [artworks, setArtworks] = useState([]);
 	const [finds, setFinds] = useState([]);
 	const [stats, setStats] = useState(null);
 	const [marking, setMarking] = useState(new Set());
@@ -11,13 +10,6 @@ export default function ScavengerPage() {
 	const [stream, setStream] = useState(null);
 	const [capturedImage, setCapturedImage] = useState(null);
 	const videoRef = useRef(null);
-
-	useEffect(() => {
-		fetch("/api/artworks")
-			.then((r) => r.json())
-			.then(setArtworks)
-			.catch(console.error);
-	}, []);
 
 	const refreshFindsAndStats = useCallback(async () => {
 		if (!user) return;

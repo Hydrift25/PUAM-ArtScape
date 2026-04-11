@@ -43,18 +43,57 @@ function getCurrentPosition() {
 
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN;
 
-export default function MapPage({ isGuest = false }) {
+export default function MapPage({ isGuest = false, artworks = [], isVisible = true }) {
 	const { user } = useAuth();
 	const mapContainer = useRef(null);
 	const map = useRef(null);
+	const mapInitialized = useRef(false);
 	const markersRef = useRef([]);
+	// objectid -> { el, art } — used by resolveMarkerStyles to mutate elements in-place
+	const markerElsRef = useRef(new Map());
 	const userMarkerRef = useRef(null);
 	const lastPosRef = useRef(null);
+	// Mirrors the artworks prop so the map.on("load") closure always sees fresh data
+	const artworksRef = useRef(artworks);
+	// Guards against double marker creation if artworks arrive before/after map load
+	const markersLoadedRef = useRef(false);
+	// Stores geolocation result so resolveMarkerStyles can be called after markers load
+	const geoPositionRef = useRef(null);
+	// Ensures resolveMarkerStyles only runs once
+	const stylesResolvedRef = useRef(false);
 	const [sheetContent, setSheetContent] = useState(null);
-	const [allArtworks, setAllArtworks] = useState([]);
 	const [sidebarOpen, setSidebarOpen] = useState(false);
 	const [foundIds, setFoundIds] = useState(new Set());
 	const [nearbyArtworks, setNearbyArtworks] = useState([]);
+
+	// Keep ref in sync with prop
+	useEffect(() => {
+		artworksRef.current = artworks;
+	}, [artworks]);
+
+	// When artworks arrive and map is already loaded, create markers if not done yet.
+	// Also trigger resolveMarkerStyles if geolocation already resolved first.
+	useEffect(() => {
+		if (!artworks.length || markersLoadedRef.current) return;
+		if (map.current && map.current.isStyleLoaded()) {
+			markersLoadedRef.current = true;
+			loadAllMarkers(artworks);
+			if (!isGuest && geoPositionRef.current && !stylesResolvedRef.current) {
+				resolveMarkerStyles(
+					geoPositionRef.current.lat,
+					geoPositionRef.current.lon,
+				);
+			}
+		}
+		// If map isn't loaded yet, the map.on("load") callback handles initial marker creation
+	}, [artworks]); // eslint-disable-line react-hooks/exhaustive-deps
+
+	// Resize Mapbox canvas when the map tab is revealed after being hidden
+	useEffect(() => {
+		if (isVisible && map.current) {
+			map.current.resize();
+		}
+	}, [isVisible]);
 
 	useEffect(() => {
 		const fetchData = async () => {
@@ -145,22 +184,59 @@ export default function MapPage({ isGuest = false }) {
 		}
 	}
 
-function clearMarkers() {
+	function clearMarkers() {
 		markersRef.current.forEach((m) => m.remove());
 		markersRef.current = [];
 	}
 
-	async function loadArtworks(lat, lon) {
-		try {
-			const [nearbyRes, allRes] = await Promise.all([
-				fetch(`/api/artworks/nearby?lat=${lat}&lon=${lon}`),
-				fetch("/api/artworks"),
-			]);
-			const nearbyData = await nearbyRes.json();
-			const allData = await allRes.json();
-			setAllArtworks(allData);
+	// Creates all markers immediately using the cached artworks prop.
+	// Guests: full style, detailed sheet on click.
+	// Auth: muted style (inline), succinct sheet on click — nearby upgrade happens in resolveMarkerStyles.
+	function loadAllMarkers(artworksData) {
+		clearMarkers();
+		markerElsRef.current.clear();
 
-			// Compute distances for NearestArtworksPanel (auth only)
+		if (isGuest) {
+			artworksData.forEach((art) => {
+				const el = createNearbyMarkerEl();
+				el.onclick = () => setSheetContent({ art, type: "detailed" });
+				const marker = new mapboxgl.Marker(el)
+					.setLngLat([art.lon, art.lat])
+					.addTo(map.current);
+				markersRef.current.push(marker);
+				markerElsRef.current.set(art.objectid, { el, art });
+			});
+		} else {
+			artworksData.forEach((art) => {
+				const el = createAllMarkerEl();
+				// Muted state applied as inline styles — does not touch class-based marker design
+				el.style.opacity = "0.45";
+				el.style.filter = "grayscale(80%)";
+				el.style.transition =
+					"opacity 0.4s ease, filter 0.4s ease, transform 0.3s ease";
+				el.onclick = () => setSheetContent({ art, type: "succinct" });
+				const marker = new mapboxgl.Marker(el)
+					.setLngLat([art.lon, art.lat])
+					.addTo(map.current);
+				markersRef.current.push(marker);
+				markerElsRef.current.set(art.objectid, { el, art });
+			});
+		}
+	}
+
+	// Fetches /api/artworks/nearby, then mutates existing marker DOM elements in-place.
+	// Nearby: upgrade to marker-nearby class, remove muted styles, pop-in transform, detailed sheet.
+	// Far: opacity 0.7, clear grayscale.
+	async function resolveMarkerStyles(lat, lon) {
+		if (stylesResolvedRef.current) return;
+		// If markers haven't been created yet (geo beat artworks), bail out —
+		// the artworks useEffect will call us again once markers exist.
+		if (!markerElsRef.current.size) return;
+		stylesResolvedRef.current = true;
+		try {
+			const res = await fetch(`/api/artworks/nearby?lat=${lat}&lon=${lon}`);
+			const nearbyData = await res.json();
+
 			const nearbyWithDist = nearbyData.map((a) => ({
 				...a,
 				distance: Math.round(haversineMeters(lat, lon, a.lat, a.lon)),
@@ -168,54 +244,40 @@ function clearMarkers() {
 			setNearbyArtworks(nearbyWithDist.slice(0, 3));
 
 			const nearbyIds = new Set(nearbyData.map((a) => a.objectid));
-			clearMarkers();
 
-			if (isGuest) {
-				// Guest: every artwork uses nearby-style marker, every click opens detailed sheet
-				allData.forEach((art) => {
-					const el = createNearbyMarkerEl();
-					const marker = new mapboxgl.Marker(el)
-						.setLngLat([art.lon, art.lat])
-						.addTo(map.current);
-					el.addEventListener("click", () =>
-						setSheetContent({ art, type: "detailed" }),
-					);
-					markersRef.current.push(marker);
-				});
-			} else {
-				// Auth: all markers use BottomSheet
-				allData.forEach((art) => {
-					if (nearbyIds.has(art.objectid)) return;
-
-					const el = createAllMarkerEl();
-					const marker = new mapboxgl.Marker(el)
-						.setLngLat([art.lon, art.lat])
-						.addTo(map.current);
-					el.addEventListener("click", () =>
-						setSheetContent({ art, type: "succinct" }),
-					);
-					markersRef.current.push(marker);
-				});
-
-				nearbyData.forEach((art) => {
-					const el = createNearbyMarkerEl();
-					const marker = new mapboxgl.Marker(el)
-						.setLngLat([art.lon, art.lat])
-						.addTo(map.current);
-					el.addEventListener("click", (e) => {
+			markerElsRef.current.forEach(({ el, art }, objectid) => {
+				if (nearbyIds.has(objectid)) {
+					// Upgrade visual class to nearby style
+					el.className = "custom-marker marker-nearby";
+					// Remove muted inline styles
+					el.style.opacity = "";
+					el.style.filter = "";
+					// Pop-in effect
+					el.style.transform = "scale(1.15)";
+					setTimeout(() => {
+						el.style.transform = "scale(1)";
+					}, 300);
+					// Reassign click handler to detailed sheet
+					el.onclick = (e) => {
 						e.stopPropagation();
 						setSheetContent({ art, type: "detailed" });
-					});
-					markersRef.current.push(marker);
-				});
-			}
+					};
+				} else {
+					el.style.opacity = "0.7";
+					el.style.filter = "";
+				}
+			});
+
 		} catch (e) {
-			console.error("Could not load map data", e);
+			console.error("Could not resolve marker styles", e);
+			// Allow a retry on error
+			stylesResolvedRef.current = false;
 		}
 	}
 
 	useEffect(() => {
-		if (map.current) return;
+		if (mapInitialized.current) return;
+		mapInitialized.current = true;
 
 		map.current = new mapboxgl.Map({
 			container: mapContainer.current,
@@ -225,15 +287,28 @@ function clearMarkers() {
 		});
 
 		map.current.on("load", () => {
+			// Load markers now if artworks already arrived; otherwise the artworks
+			// useEffect will call loadAllMarkers once they come in.
+			if (artworksRef.current.length > 0 && !markersLoadedRef.current) {
+				markersLoadedRef.current = true;
+				loadAllMarkers(artworksRef.current);
+			}
+
 			navigator.geolocation.getCurrentPosition(
 				(pos) => {
-					map.current.setCenter([
-						pos.coords.longitude,
-						pos.coords.latitude,
-					]);
-					loadArtworks(pos.coords.latitude, pos.coords.longitude);
+					const { latitude: lat, longitude: lon } = pos.coords;
+					geoPositionRef.current = { lat, lon };
+					map.current.setCenter([lon, lat]);
+					if (!isGuest) {
+						resolveMarkerStyles(lat, lon);
+					}
 				},
-				() => loadArtworks(40.343, -74.6514),
+				() => {
+					geoPositionRef.current = { lat: 40.343, lon: -74.6514 };
+					if (!isGuest) {
+						resolveMarkerStyles(40.343, -74.6514);
+					}
+				},
 			);
 
 			navigator.geolocation.watchPosition(
@@ -265,7 +340,7 @@ function clearMarkers() {
 			<ScavengerSidebar
 				open={sidebarOpen}
 				onClose={() => setSidebarOpen(false)}
-				artworks={allArtworks}
+				artworks={artworks}
 				foundIds={foundIds}
 			/>
 			{!isGuest && (

@@ -64,7 +64,10 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 	const [sheetContent, setSheetContent] = useState(null);
 	const [sidebarOpen, setSidebarOpen] = useState(false);
 	const [foundIds, setFoundIds] = useState(new Set());
+	const [favoritedIds, setFavoritedIds] = useState(new Set());
 	const [nearbyArtworks, setNearbyArtworks] = useState([]);
+	// True until both /api/artworks/visited and /api/artworks/favorites resolve
+	const [favoritesLoading, setFavoritesLoading] = useState(true);
 
 	// Keep ref in sync with prop
 	useEffect(() => {
@@ -98,22 +101,27 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 	useEffect(() => {
 		const fetchData = async () => {
 			if (!user) {
-				setFoundIds(new Set());
+				setFavoritesLoading(false);
 				return;
 			}
 			try {
-				const res = await fetch("/api/artworks/visited", {
-					credentials: "include",
-				});
-				if (!res.ok) {
-					setFoundIds(new Set());
-					return;
+				const [visitedRes, favRes] = await Promise.all([
+					fetch("/api/artworks/visited", { credentials: "include" }),
+					fetch("/api/artworks/favorites", { credentials: "include" }),
+				]);
+				if (visitedRes.ok) {
+					const data = await visitedRes.json();
+					// API returns objects [{objectid, ...}] — extract ids for Set membership checks
+					setFoundIds(new Set((data ?? []).map((d) => d.objectid)));
 				}
-				const data = await res.json();
-				setFoundIds(new Set(data ?? []));
+				if (favRes.ok) {
+					const data = await favRes.json();
+					setFavoritedIds(new Set((data ?? []).map((d) => d.objectid)));
+				}
 			} catch (err) {
-				console.error("Failed to fetch visited artworks:", err);
-				setFoundIds(new Set());
+				console.error("Failed to fetch user artwork data:", err);
+			} finally {
+				setFavoritesLoading(false);
 			}
 		};
 		fetchData();
@@ -212,8 +220,7 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 				// Muted state applied as inline styles — does not touch class-based marker design
 				el.style.opacity = "0.45";
 				el.style.filter = "grayscale(80%)";
-				el.style.transition =
-					"opacity 0.4s ease, filter 0.4s ease, transform 0.3s ease";
+				el.style.transition = "opacity 0.4s ease, filter 0.4s ease";
 				el.onclick = () => setSheetContent({ art, type: "succinct" });
 				const marker = new mapboxgl.Marker(el)
 					.setLngLat([art.lon, art.lat])
@@ -247,16 +254,24 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 
 			markerElsRef.current.forEach(({ el, art }, objectid) => {
 				if (nearbyIds.has(objectid)) {
-					// Upgrade visual class to nearby style
-					el.className = "custom-marker marker-nearby";
+					// Upgrade to nearby style — classList ops preserve any classes
+					// Mapbox has added (e.g. mapboxgl-marker, anchor class)
+					el.classList.remove("marker-all");
+					el.classList.add("marker-nearby");
 					// Remove muted inline styles
 					el.style.opacity = "";
 					el.style.filter = "";
-					// Pop-in effect
-					el.style.transform = "scale(1.15)";
-					setTimeout(() => {
-						el.style.transform = "scale(1)";
-					}, 300);
+					// Pop-in via keyframe animation on the inner visual element —
+					// keeps Mapbox's transform: translate3d() on the root untouched
+					const inner = el.querySelector(".marker-inner");
+					if (inner) {
+						inner.classList.add("marker-popin");
+						inner.addEventListener(
+							"animationend",
+							() => inner.classList.remove("marker-popin"),
+							{ once: true },
+						);
+					}
 					// Reassign click handler to detailed sheet
 					el.onclick = (e) => {
 						e.stopPropagation();
@@ -360,8 +375,14 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 						? foundIds.has(sheetContent.art.objectid)
 						: false
 				}
+				isFavorited={
+					sheetContent?.art
+						? favoritedIds.has(sheetContent.art.objectid)
+						: false
+				}
 				isGuest={isGuest}
 				user={user}
+				favoritesLoading={favoritesLoading}
 			/>
 		</>
 	);

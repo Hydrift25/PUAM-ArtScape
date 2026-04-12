@@ -102,15 +102,29 @@ body {
 }
 
 .custom-marker {
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    /* Explicit dimensions let Mapbox read offsetWidth/offsetHeight correctly
+       at marker creation time (before the first browser layout pass). */
+    position: relative;
     cursor: pointer;
 }
 
-.marker-inner {
+/* Root dimensions — Mapbox uses these for the center-anchor offset calculation */
+.marker-all {
     width: 15px;
     height: 15px;
+}
+
+.marker-nearby {
+    width: 24px;
+    height: 24px;
+}
+
+.marker-inner {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
     border-radius: 50%;
     border: 2px solid white;
     box-shadow: 0 2px 5px rgba(0,0,0,0.3);
@@ -119,8 +133,6 @@ body {
 
 .marker-nearby .marker-inner {
     background-color: #EE7F2D;
-    width: 24px;
-    height: 24px;
 }
 
 .marker-all .marker-inner {
@@ -1643,4 +1655,13 @@ body {
 
 .profile-cta-btn:hover {
     background: #c93a08;
+}
+
+@keyframes markerPopIn {
+    0%   { transform: scale(1); }
+    40%  { transform: scale(1.18); }
+    100% { transform: scale(1); }
+}
+.marker-popin {
+    animation: markerPopIn 0.35s ease forwards;
 }

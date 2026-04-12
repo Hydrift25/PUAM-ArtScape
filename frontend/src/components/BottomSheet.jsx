@@ -6,11 +6,16 @@ export default function BottomSheet({
 	onVerify,
 	isFound,
 	isGuest,
+	favoritesLoading = false,
+	isFavorited = false,
 }) {
 	const [visible, setVisible] = useState(false);
-	const [favorited, setFavorited] = useState(
-		content?.art?.favorited ?? false,
-	);
+	const [favorited, setFavorited] = useState(isFavorited);
+
+	// Sync if the sheet is open while favoritesLoading resolves
+	useEffect(() => {
+		setFavorited(isFavorited);
+	}, [isFavorited]);
 	const sheetRef = useRef(null);
 	const touchStartY = useRef(null);
 	const touchCurrentY = useRef(null);
@@ -230,6 +235,8 @@ export default function BottomSheet({
 							className={`bs-fav-overlay-btn${favorited ? " favorited" : ""}`}
 							onClick={toggleFavorite}
 							aria-label={favorited ? "Unfavorite" : "Favorite"}
+							disabled={favoritesLoading}
+							style={favoritesLoading ? { opacity: 0.5 } : undefined}
 						>
 							{favorited ? "❤️" : "🤍"}
 						</button>
@@ -293,13 +300,16 @@ export default function BottomSheet({
 							onClick={() =>
 								!isFound && onVerify && onVerify(art)
 							}
-							disabled={isFound}
+							disabled={isFound || favoritesLoading}
+							style={favoritesLoading ? { opacity: 0.5 } : undefined}
 						>
 							{isFound ? "✅ Visited" : "📍 Mark as Visited"}
 						</button>
 						<button
 							className={`bs-action-btn${favorited ? " bs-action-unfav" : " bs-action-fav"}`}
 							onClick={toggleFavorite}
+							disabled={favoritesLoading}
+							style={favoritesLoading ? { opacity: 0.5 } : undefined}
 						>
 							{favorited ? "💔 Unfavorite" : "❤️ Save to Favorites"}
 						</button>

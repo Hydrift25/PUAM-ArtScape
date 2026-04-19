@@ -27,7 +27,7 @@ function haversineMeters(lat1, lon1, lat2, lon2) {
 	return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-function getCurrentPosition() {
+function fetchGeoPosition() {
 	return new Promise((resolve, reject) => {
 		if (!navigator.geolocation) {
 			reject(new Error("Geolocation not supported"));
@@ -61,6 +61,17 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 	const geoPositionRef = useRef(null);
 	// Ensures resolveMarkerStyles only runs once
 	const stylesResolvedRef = useRef(false);
+	// Mirrors locationStatus state for closure access inside map.on("load")
+	const locationStatusRef = useRef("pending");
+	// Stores the watchPosition ID so we only start one watcher
+	const watchIdRef = useRef(null);
+
+	// 'pending' | 'loading' | 'granted' | 'denied'
+	const [locationStatus, setLocationStatus] = useState("pending");
+	const [showDeniedTooltip, setShowDeniedTooltip] = useState(false);
+	const [deniedBannerDismissed, setDeniedBannerDismissed] = useState(
+		() => sessionStorage.getItem("artscape.locDeniedDismissed") === "1",
+	);
 	const [sheetContent, setSheetContent] = useState(null);
 	const [sidebarOpen, setSidebarOpen] = useState(false);
 	const [foundIds, setFoundIds] = useState(new Set());
@@ -68,6 +79,12 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 	const [nearbyArtworks, setNearbyArtworks] = useState([]);
 	// True until both /api/artworks/visited and /api/artworks/favorites resolve
 	const [favoritesLoading, setFavoritesLoading] = useState(true);
+
+	// Updates both the ref (for closure access) and the state (for rendering)
+	function setLocStatus(status) {
+		locationStatusRef.current = status;
+		setLocationStatus(status);
+	}
 
 	// Keep ref in sync with prop
 	useEffect(() => {
@@ -90,6 +107,49 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 		}
 		// If map isn't loaded yet, the map.on("load") callback handles initial marker creation
 	}, [artworks]); // eslint-disable-line react-hooks/exhaustive-deps
+
+	// Start watchPosition only after location is granted — iOS requires getUserMedia-style
+	// gesture before watchPosition will prompt, so we wait until getCurrentPosition succeeds.
+	useEffect(() => {
+		if (locationStatus !== "granted") return;
+		if (watchIdRef.current !== null) return;
+		if (!navigator.geolocation) return;
+
+		watchIdRef.current = navigator.geolocation.watchPosition(
+			(pos) => {
+				const { latitude: lat, longitude: lon } = pos.coords;
+				lastPosRef.current = { lat, lon };
+				if (!map.current) return;
+				if (!userMarkerRef.current) {
+					const el = createUserMarkerEl();
+					userMarkerRef.current = new mapboxgl.Marker(el)
+						.setLngLat([lon, lat])
+						.addTo(map.current);
+				} else {
+					userMarkerRef.current.setLngLat([lon, lat]);
+				}
+			},
+			(err) => console.error(err),
+			{ enableHighAccuracy: true, maximumAge: 10000 },
+		);
+	}, [locationStatus]); // eslint-disable-line react-hooks/exhaustive-deps
+
+	// When location is denied, upgrade existing muted markers to full-detail style in-place.
+	// This mirrors the resolveMarkerStyles approach but without the nearby API call.
+	useEffect(() => {
+		if (locationStatus !== "denied") return;
+		if (markerElsRef.current.size === 0) return;
+		markerElsRef.current.forEach(({ el, art }) => {
+			el.classList.remove("marker-all");
+			el.classList.add("marker-nearby");
+			el.style.opacity = "";
+			el.style.filter = "";
+			el.onclick = (e) => {
+				e.stopPropagation();
+				setSheetContent({ art, type: "detailed" });
+			};
+		});
+	}, [locationStatus]); // eslint-disable-line react-hooks/exhaustive-deps
 
 	// Resize Mapbox canvas when the map tab is revealed after being hidden
 	useEffect(() => {
@@ -163,7 +223,7 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 				userLat = lastPosRef.current.lat;
 				userLon = lastPosRef.current.lon;
 			} else {
-				const pos = await getCurrentPosition();
+				const pos = await fetchGeoPosition();
 				userLat = pos.coords.latitude;
 				userLon = pos.coords.longitude;
 				lastPosRef.current = { lat: userLat, lon: userLon };
@@ -192,19 +252,43 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 		}
 	}
 
+	// Called when user taps "Enable Location" — must be a direct response to a user gesture
+	// so iOS Safari will actually show the permission prompt.
+	async function enableLocation() {
+		setLocStatus("loading");
+		try {
+			const pos = await fetchGeoPosition();
+			const { latitude: lat, longitude: lon } = pos.coords;
+			geoPositionRef.current = { lat, lon };
+			lastPosRef.current = { lat, lon };
+			if (map.current) map.current.setCenter([lon, lat]);
+			setLocStatus("granted");
+			if (!isGuest) resolveMarkerStyles(lat, lon);
+		} catch {
+			setLocStatus("denied");
+		}
+	}
+
+	function dismissDeniedBanner() {
+		sessionStorage.setItem("artscape.locDeniedDismissed", "1");
+		setDeniedBannerDismissed(true);
+	}
+
 	function clearMarkers() {
 		markersRef.current.forEach((m) => m.remove());
 		markersRef.current = [];
 	}
 
 	// Creates all markers immediately using the cached artworks prop.
-	// Guests: full style, detailed sheet on click.
-	// Auth: muted style (inline), succinct sheet on click — nearby upgrade happens in resolveMarkerStyles.
+	// showAllDetailed: full style + detailed sheet (guests and denied-location auth users).
+	// Otherwise: muted style + succinct sheet — nearby upgrade happens in resolveMarkerStyles.
 	function loadAllMarkers(artworksData) {
 		clearMarkers();
 		markerElsRef.current.clear();
 
-		if (isGuest) {
+		const showAllDetailed = isGuest || locationStatusRef.current === "denied";
+
+		if (showAllDetailed) {
 			artworksData.forEach((art) => {
 				const el = createNearbyMarkerEl();
 				el.onclick = () => setSheetContent({ art, type: "detailed" });
@@ -309,40 +393,44 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 				loadAllMarkers(artworksRef.current);
 			}
 
-			navigator.geolocation.getCurrentPosition(
-				(pos) => {
+			// Silently get location when permission is already granted (no prompt needed).
+			// Only used from the pre-check path — not exposed to JSX.
+			const doSilentGet = async () => {
+				try {
+					const pos = await fetchGeoPosition();
 					const { latitude: lat, longitude: lon } = pos.coords;
 					geoPositionRef.current = { lat, lon };
-					map.current.setCenter([lon, lat]);
-					if (!isGuest) {
-						resolveMarkerStyles(lat, lon);
-					}
-				},
-				() => {
-					geoPositionRef.current = { lat: 40.343, lon: -74.6514 };
-					if (!isGuest) {
-						resolveMarkerStyles(40.343, -74.6514);
-					}
-				},
-			);
-
-			navigator.geolocation.watchPosition(
-				(pos) => {
-					const { latitude: lat, longitude: lon } = pos.coords;
 					lastPosRef.current = { lat, lon };
-					if (!userMarkerRef.current) {
-						const el = createUserMarkerEl();
-						userMarkerRef.current = new mapboxgl.Marker(el)
-							.setLngLat([lon, lat])
-							.addTo(map.current);
-						map.current.flyTo({ center: [lon, lat], zoom: 14 });
-					} else {
-						userMarkerRef.current.setLngLat([lon, lat]);
-					}
-				},
-				(err) => console.error(err),
-				{ enableHighAccuracy: true, maximumAge: 10000 },
-			);
+					if (map.current) map.current.setCenter([lon, lat]);
+					locationStatusRef.current = "granted";
+					setLocationStatus("granted");
+					if (!isGuest) resolveMarkerStyles(lat, lon);
+				} catch {
+					locationStatusRef.current = "denied";
+					setLocationStatus("denied");
+				}
+			};
+
+			// Permission pre-check: skip the prompt banner if permission is already known.
+			// navigator.permissions is unavailable on older iOS Safari — wrap in try/catch.
+			try {
+				navigator.permissions
+					.query({ name: "geolocation" })
+					.then((result) => {
+						if (result.state === "granted") {
+							doSilentGet();
+						} else if (result.state === "denied") {
+							locationStatusRef.current = "denied";
+							setLocationStatus("denied");
+						}
+						// result.state === 'prompt' → leave as 'pending', banner will show
+					})
+					.catch(() => {
+						// permissions.query returned a rejected promise — leave as pending
+					});
+			} catch {
+				// navigator.permissions not available (old iOS Safari) — leave as pending
+			}
 		});
 	}, []);
 
@@ -365,6 +453,52 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 					hidden={!!sheetContent}
 				/>
 			)}
+
+			{/* Location prompt banner — shown while we're waiting for user to enable location */}
+			{!isGuest && (locationStatus === "pending" || locationStatus === "loading") && (
+				<div className="loc-banner loc-banner-prompt">
+					<span className="loc-banner-text">
+						📍 Find the 3 artworks closest to you →
+					</span>
+					<button
+						className="loc-banner-btn"
+						onClick={enableLocation}
+						disabled={locationStatus === "loading"}
+					>
+						{locationStatus === "loading" ? "Locating…" : "Enable Location"}
+					</button>
+				</div>
+			)}
+
+			{/* Location denied banner — dismissable for the session */}
+			{!isGuest && locationStatus === "denied" && !deniedBannerDismissed && (
+				<div className="loc-banner loc-banner-denied">
+					<span className="loc-banner-text">
+						📍 Location off · Showing all artworks ·{" "}
+						<button
+							className="loc-banner-link"
+							onClick={() => setShowDeniedTooltip((v) => !v)}
+						>
+							How to enable ↗
+						</button>
+					</span>
+					<button
+						className="loc-banner-dismiss"
+						onClick={dismissDeniedBanner}
+						aria-label="Dismiss"
+					>
+						✕
+					</button>
+					{showDeniedTooltip && (
+						<div className="loc-denied-tooltip">
+							<strong>Safari (iOS):</strong> Settings → Privacy &amp; Security → Location Services → Safari → Allow
+							<br />
+							<strong>Chrome (Android):</strong> Settings → Site Settings → Location → Allow
+						</div>
+					)}
+				</div>
+			)}
+
 			<BottomSheet
 				key={sheetContent?.art?.objectid}
 				content={sheetContent}
@@ -383,6 +517,7 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 				isGuest={isGuest}
 				user={user}
 				favoritesLoading={favoritesLoading}
+				locationStatus={locationStatus}
 			/>
 		</>
 	);

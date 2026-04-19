@@ -626,8 +626,7 @@ body {
 
 .bs-image {
     width: 100%;
-    max-height: 240px;
-    object-fit: cover;
+    height: auto;
     border-radius: 0;
     display: block;
 }
@@ -1664,4 +1663,103 @@ body {
 }
 .marker-popin {
     animation: markerPopIn 0.35s ease forwards;
+}
+
+/* ============================================================
+   LOCATION BANNERS
+   ============================================================ */
+.loc-banner {
+    position: fixed;
+    top: 64px;
+    left: 0;
+    right: 0;
+    z-index: 150;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 14px;
+    font-size: 0.82rem;
+    font-weight: 500;
+    flex-wrap: wrap;
+}
+
+.loc-banner-prompt {
+    background: #E8450A;
+    color: #fff;
+}
+
+.loc-banner-denied {
+    background: #1a1a1a;
+    color: rgba(255,255,255,0.85);
+}
+
+.loc-banner-text {
+    flex: 1;
+    min-width: 0;
+}
+
+.loc-banner-btn {
+    background: #fff;
+    color: #E8450A;
+    border: none;
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
+    transition: opacity 0.15s;
+}
+
+.loc-banner-btn:disabled {
+    opacity: 0.65;
+    cursor: default;
+}
+
+.loc-banner-link {
+    background: none;
+    border: none;
+    color: rgba(255,255,255,0.75);
+    font-size: inherit;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 0;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.loc-banner-dismiss {
+    background: none;
+    border: none;
+    color: rgba(255,255,255,0.6);
+    font-size: 0.85rem;
+    cursor: pointer;
+    padding: 4px;
+    flex-shrink: 0;
+    line-height: 1;
+}
+
+/* Expands downward from the denied banner into the map */
+.loc-denied-tooltip {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: #2a2a2a;
+    color: rgba(255,255,255,0.85);
+    padding: 12px 16px;
+    font-size: 0.8rem;
+    line-height: 1.7;
+    border-radius: 0 0 8px 8px;
+}
+
+/* ============================================================
+   BOTTOM SHEET — location denied note
+   ============================================================ */
+.bs-loc-denied-note {
+    margin: 0;
+    font-size: 0.8rem;
+    color: #888;
+    text-align: center;
 }

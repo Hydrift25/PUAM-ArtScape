@@ -8,6 +8,7 @@ export default function BottomSheet({
 	isGuest,
 	favoritesLoading = false,
 	isFavorited = false,
+	locationStatus = "granted",
 }) {
 	const [visible, setVisible] = useState(false);
 	const [favorited, setFavorited] = useState(isFavorited);
@@ -298,13 +299,18 @@ export default function BottomSheet({
 						<button
 							className={`bs-action-btn bs-action-visit${isFound ? " bs-action-found" : ""}`}
 							onClick={() =>
-								!isFound && onVerify && onVerify(art)
+								!isFound && locationStatus !== "denied" && onVerify && onVerify(art)
 							}
-							disabled={isFound || favoritesLoading}
+							disabled={isFound || favoritesLoading || locationStatus === "denied"}
 							style={favoritesLoading ? { opacity: 0.5 } : undefined}
 						>
 							{isFound ? "✅ Visited" : "📍 Mark as Visited"}
 						</button>
+						{!isFound && locationStatus === "denied" && (
+							<p className="bs-loc-denied-note">
+								Enable location to verify you&apos;re near this artwork.
+							</p>
+						)}
 						<button
 							className={`bs-action-btn${favorited ? " bs-action-unfav" : " bs-action-fav"}`}
 							onClick={toggleFavorite}

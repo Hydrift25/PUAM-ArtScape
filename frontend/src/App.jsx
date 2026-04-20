@@ -2,21 +2,12 @@ import { Suspense, lazy, useEffect, useState } from "react";
 import { BrowserRouter, Routes, Route, NavLink, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import MapPage from "./pages/MapPage";
+import ProfileDropdown from "./components/ProfileDropdown";
 
 const AuthPage = lazy(() => import("./pages/AuthPage"));
 const ScavengerPage = lazy(() => import("./pages/ScavengerPage"));
 const LeaderboardPage = lazy(() => import("./pages/LeaderboardPage"));
 const ProfilePage = lazy(() => import("./pages/ProfilePage"));
-
-function getInitials(name) {
-	if (!name) return "?";
-	return name
-		.split(" ")
-		.map((n) => n[0])
-		.join("")
-		.slice(0, 2)
-		.toUpperCase();
-}
 
 function MapIcon() {
 	return (
@@ -66,25 +57,14 @@ function GuestNavbar() {
 }
 
 function AuthNavbar() {
-	const { user } = useAuth();
-	const initials = getInitials(user?.display_name);
+	const { user, logout } = useAuth();
 	return (
 		<nav className="app-navbar">
 			<div className="navbar-left">
 				<span className="navbar-title">📍 Princeton Art Explorer</span>
 				<span className="navbar-subtitle">Discover art across campus</span>
 			</div>
-			<div className="navbar-avatar">
-				{user?.avatar_url ? (
-					<img
-						src={user.avatar_url}
-						alt={initials}
-						className="navbar-avatar-img"
-					/>
-				) : (
-					<span>{initials}</span>
-				)}
-			</div>
+			<ProfileDropdown user={user} onLogout={logout} />
 		</nav>
 	);
 }

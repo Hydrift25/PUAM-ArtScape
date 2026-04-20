@@ -65,6 +65,8 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 	const locationStatusRef = useRef("pending");
 	// Stores the watchPosition ID so we only start one watcher
 	const watchIdRef = useRef(null);
+	// Guards against double nearby fetch on the guest path (mirrors stylesResolvedRef)
+	const nearbyFetchedRef = useRef(false);
 
 	// 'pending' | 'loading' | 'granted' | 'denied'
 	const [locationStatus, setLocationStatus] = useState("pending");
@@ -77,6 +79,7 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 	const [foundIds, setFoundIds] = useState(new Set());
 	const [favoritedIds, setFavoritedIds] = useState(new Set());
 	const [nearbyArtworks, setNearbyArtworks] = useState([]);
+	const [panelMinimized, setPanelMinimized] = useState(false);
 	// True until both /api/artworks/visited and /api/artworks/favorites resolve
 	const [favoritesLoading, setFavoritesLoading] = useState(true);
 
@@ -103,6 +106,9 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 					geoPositionRef.current.lat,
 					geoPositionRef.current.lon,
 				);
+			}
+			if (isGuest && geoPositionRef.current) {
+				fetchNearbyData(geoPositionRef.current.lat, geoPositionRef.current.lon);
 			}
 		}
 		// If map isn't loaded yet, the map.on("load") callback handles initial marker creation
@@ -264,6 +270,7 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 			if (map.current) map.current.setCenter([lon, lat]);
 			setLocStatus("granted");
 			if (!isGuest) resolveMarkerStyles(lat, lon);
+			else fetchNearbyData(lat, lon);
 		} catch {
 			setLocStatus("denied");
 		}
@@ -312,6 +319,24 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 				markersRef.current.push(marker);
 				markerElsRef.current.set(art.objectid, { el, art });
 			});
+		}
+	}
+
+	// Guest path: populates nearbyArtworks without touching marker DOM.
+	async function fetchNearbyData(lat, lon) {
+		if (nearbyFetchedRef.current) return;
+		nearbyFetchedRef.current = true;
+		try {
+			const res = await fetch(`/api/artworks/nearby?lat=${lat}&lon=${lon}`);
+			const nearbyData = await res.json();
+			const nearbyWithDist = nearbyData.map((a) => ({
+				...a,
+				distance: Math.round(haversineMeters(lat, lon, a.lat, a.lon)),
+			}));
+			setNearbyArtworks(nearbyWithDist.slice(0, 3));
+		} catch (e) {
+			console.error("Could not fetch nearby artworks", e);
+			nearbyFetchedRef.current = false;
 		}
 	}
 
@@ -405,6 +430,7 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 					locationStatusRef.current = "granted";
 					setLocationStatus("granted");
 					if (!isGuest) resolveMarkerStyles(lat, lon);
+					else fetchNearbyData(lat, lon);
 				} catch {
 					locationStatusRef.current = "denied";
 					setLocationStatus("denied");
@@ -434,6 +460,9 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 		});
 	}, []);
 
+	const panelVisible = !panelMinimized && !sheetContent;
+	const pillVisible = panelMinimized && !sheetContent;
+
 	return (
 		<>
 			<div
@@ -446,12 +475,20 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 				artworks={artworks}
 				foundIds={foundIds}
 			/>
-			{!isGuest && (
-				<NearestArtworksPanel
-					artworks={nearbyArtworks}
-					onSelect={(art) => setSheetContent({ art, type: "detailed" })}
-					hidden={!!sheetContent}
-				/>
+			<NearestArtworksPanel
+				artworks={nearbyArtworks}
+				onSelect={(art) => setSheetContent({ art, type: "detailed" })}
+				hidden={!panelVisible}
+				onMinimize={() => setPanelMinimized(true)}
+			/>
+			{pillVisible && (
+				<button
+					className={`restore-pill${isGuest ? " restore-pill--guest" : ""}`}
+					onClick={() => setPanelMinimized(false)}
+					aria-label="Show nearest artworks"
+				>
+					↑ Artworks
+				</button>
 			)}
 
 			{/* Location prompt banner — shown while we're waiting for user to enable location */}

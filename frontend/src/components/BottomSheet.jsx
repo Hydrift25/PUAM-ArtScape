@@ -4,6 +4,8 @@ export default function BottomSheet({
 	content,
 	onClose,
 	onVerify,
+	onFetchRoute,
+	navigationMode = false,
 	isFound,
 	isGuest,
 	favoritesLoading = false,
@@ -77,6 +79,17 @@ export default function BottomSheet({
 		? `${art.image_url}/full/600,/0/default.jpg`
 		: null;
 
+	if (navigationMode) {
+		return (
+			<div ref={sheetRef} className="bottom-sheet show bs-nav-mini">
+				<div className="bs-nav-mini-content">
+					<span className="bs-nav-mini-title">{art.title || "Artwork"}</span>
+					<span className="bs-nav-badge">Navigating</span>
+				</div>
+			</div>
+		);
+	}
+
 	async function toggleFavorite() {
 		try {
 			const res = await fetch("/api/artworks/favorite", {
@@ -94,8 +107,6 @@ export default function BottomSheet({
 			alert("Something went wrong. Please try again.");
 		}
 	}
-
-	const directionsUrl = `https://www.google.com/maps/dir/?api=1&destination=${art.lat},${art.lon}`;
 
 	return (
 		<div
@@ -125,6 +136,18 @@ export default function BottomSheet({
 					<p className="bs-succinct-hint">
 						📍 Walk closer to reveal details.
 					</p>
+					<button
+						className="bs-directions-btn--outline"
+						onClick={() => onFetchRoute(art)}
+						disabled={locationStatus !== "granted"}
+					>
+						Get Directions
+					</button>
+					{locationStatus !== "granted" && (
+						<p className="bs-loc-denied-note">
+							Enable location to use in-app directions.
+						</p>
+					)}
 				</div>
 			) : isGuest ? (
 				/* ── GUEST detailed sheet ── */
@@ -182,14 +205,12 @@ export default function BottomSheet({
 						<p className="bs-location-text">
 							{art.location || "Princeton University Campus"}
 						</p>
-						<a
-							href={directionsUrl}
-							target="_blank"
-							rel="noopener noreferrer"
+						<button
 							className="bs-directions-btn"
+							onClick={() => onFetchRoute(art)}
 						>
 							Get Directions
-						</a>
+						</button>
 					</div>
 
 					{/* About card */}
@@ -267,14 +288,12 @@ export default function BottomSheet({
 						<p className="bs-location-text">
 							{art.location || "Princeton University Campus"}
 						</p>
-						<a
-							href={directionsUrl}
-							target="_blank"
-							rel="noopener noreferrer"
+						<button
 							className="bs-directions-btn"
+							onClick={() => onFetchRoute(art)}
 						>
 							Get Directions
-						</a>
+						</button>
 					</div>
 
 					{/* About card */}

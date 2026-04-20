@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import BottomSheet from "../components/BottomSheet";
+import DirectionsPanel from "../components/DirectionsPanel";
 import ScavengerSidebar from "../components/ScavengerSidebar";
 import NearestArtworksPanel from "../components/NearestArtworksPanel";
 import {
@@ -25,6 +26,14 @@ function haversineMeters(lat1, lon1, lat2, lon2) {
 			Math.cos(toRad(lat2)) *
 			Math.sin(dLon / 2) ** 2;
 	return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function getBearing(lat1, lon1, lat2, lon2) {
+	const dLon = (lon2 - lon1) * Math.PI / 180;
+	const y = Math.sin(dLon) * Math.cos(lat2 * Math.PI / 180);
+	const x = Math.cos(lat1 * Math.PI / 180) * Math.sin(lat2 * Math.PI / 180) -
+		Math.sin(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.cos(dLon);
+	return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
 }
 
 function fetchGeoPosition() {
@@ -83,6 +92,13 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 	// True until both /api/artworks/visited and /api/artworks/favorites resolve
 	const [favoritesLoading, setFavoritesLoading] = useState(true);
 
+	const [navigationState, setNavigationState] = useState(null);
+	const [showRecenter, setShowRecenter] = useState(false);
+	const preNavCameraRef = useRef(null);
+	// Mirrors navigationState for closure access in marker onclick handlers
+	const navigationStateRef = useRef(null);
+	const userInteractingRef = useRef(false);
+
 	// Updates both the ref (for closure access) and the state (for rendering)
 	function setLocStatus(status) {
 		locationStatusRef.current = status;
@@ -93,6 +109,10 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 	useEffect(() => {
 		artworksRef.current = artworks;
 	}, [artworks]);
+
+	useEffect(() => {
+		navigationStateRef.current = navigationState;
+	}, [navigationState]);
 
 	// When artworks arrive and map is already loaded, create markers if not done yet.
 	// Also trigger resolveMarkerStyles if geolocation already resolved first.
@@ -151,6 +171,7 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 			el.style.opacity = "";
 			el.style.filter = "";
 			el.onclick = (e) => {
+				if (navigationStateRef.current) return;
 				e.stopPropagation();
 				setSheetContent({ art, type: "detailed" });
 			};
@@ -298,7 +319,10 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 		if (showAllDetailed) {
 			artworksData.forEach((art) => {
 				const el = createNearbyMarkerEl();
-				el.onclick = () => setSheetContent({ art, type: "detailed" });
+				el.onclick = () => {
+					if (navigationStateRef.current) return;
+					setSheetContent({ art, type: "detailed" });
+				};
 				const marker = new mapboxgl.Marker(el)
 					.setLngLat([art.lon, art.lat])
 					.addTo(map.current);
@@ -312,7 +336,10 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 				el.style.opacity = "0.45";
 				el.style.filter = "grayscale(80%)";
 				el.style.transition = "opacity 0.4s ease, filter 0.4s ease";
-				el.onclick = () => setSheetContent({ art, type: "succinct" });
+				el.onclick = () => {
+					if (navigationStateRef.current) return;
+					setSheetContent({ art, type: "succinct" });
+				};
 				const marker = new mapboxgl.Marker(el)
 					.setLngLat([art.lon, art.lat])
 					.addTo(map.current);
@@ -383,6 +410,7 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 					}
 					// Reassign click handler to detailed sheet
 					el.onclick = (e) => {
+						if (navigationStateRef.current) return;
 						e.stopPropagation();
 						setSheetContent({ art, type: "detailed" });
 					};
@@ -399,6 +427,185 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 		}
 	}
 
+	async function fetchRoute(art) {
+		if (!lastPosRef.current) return;
+
+		preNavCameraRef.current = {
+			center: map.current.getCenter(),
+			zoom: map.current.getZoom(),
+			pitch: map.current.getPitch(),
+			bearing: map.current.getBearing(),
+		};
+
+		const origin = `${lastPosRef.current.lon},${lastPosRef.current.lat}`;
+		const destination = `${art.lon},${art.lat}`;
+		const token = import.meta.env.VITE_MAPBOX_TOKEN;
+		const url = `https://api.mapbox.com/directions/v5/mapbox/walking/${origin};${destination}?steps=true&geometries=geojson&overview=full&access_token=${token}`;
+
+		let routeData;
+		try {
+			const res = await fetch(url);
+			const json = await res.json();
+			if (!json.routes || json.routes.length === 0) {
+				console.warn("No route found");
+				return;
+			}
+			routeData = json.routes[0];
+		} catch (err) {
+			console.error("Directions API error:", err);
+			return;
+		}
+
+		const coords = routeData.geometry.coordinates;
+		const steps = routeData.legs[0].steps.map((s) => ({
+			instruction: s.maneuver.instruction,
+			distance: s.distance,
+		}));
+
+		map.current.getSource("route").setData({
+			type: "Feature",
+			geometry: routeData.geometry,
+		});
+		map.current.getSource("route-traveled").setData({
+			type: "Feature",
+			geometry: { type: "LineString", coordinates: [] },
+		});
+
+		const lons = coords.map((c) => c[0]);
+		const lats = coords.map((c) => c[1]);
+		map.current.fitBounds(
+			[
+				[Math.min(...lons), Math.min(...lats)],
+				[Math.max(...lons), Math.max(...lats)],
+			],
+			{ padding: { top: 80, bottom: 280, left: 40, right: 40 }, duration: 800 },
+		);
+
+		setNavigationState({
+			mode: "preview",
+			route: coords,
+			steps,
+			destination: { lat: art.lat, lng: art.lon, title: art.title, objectid: art.objectid },
+			totalDistance: routeData.distance,
+			totalDuration: routeData.duration,
+			watchId: null,
+		});
+	}
+
+	function beginNavigation() {
+		setNavigationState((prev) => {
+			if (!prev || prev.mode !== "preview") return prev;
+
+			const watchId = navigator.geolocation.watchPosition(
+				(position) => onPositionUpdate(position, prev.route, prev.destination),
+				(err) => console.warn("watchPosition error:", err),
+				{ enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 },
+			);
+
+			return {
+				...prev,
+				mode: "navigating",
+				distanceRemaining: prev.totalDistance,
+				watchId,
+			};
+		});
+
+		// flyTo is outside the setter — safe from double-invocation in strict mode
+		const current = navigationStateRef.current;
+		if (current && map.current && lastPosRef.current) {
+			map.current.flyTo({
+				center: [lastPosRef.current.lon, lastPosRef.current.lat],
+				zoom: 17,
+				pitch: 60,
+				bearing: getBearing(
+					lastPosRef.current.lat, lastPosRef.current.lon,
+					current.destination.lat, current.destination.lng,
+				),
+				duration: 1000,
+				essential: true,
+			});
+		}
+	}
+
+	function onPositionUpdate(position, routeCoords, destination) {
+		const { latitude, longitude, accuracy } = position.coords;
+
+		const distanceRemaining = haversineMeters(
+			latitude,
+			longitude,
+			destination.lat,
+			destination.lng,
+		);
+
+		if (accuracy <= 30 && map.current) {
+			let closestIdx = 0;
+			let minDist = Infinity;
+			routeCoords.forEach(([cLon, cLat], idx) => {
+				const d = haversineMeters(latitude, longitude, cLat, cLon);
+				if (d < minDist) {
+					minDist = d;
+					closestIdx = idx;
+				}
+			});
+
+			const traveled = routeCoords.slice(0, closestIdx + 1);
+			if (traveled.length >= 2) {
+				map.current.getSource("route-traveled").setData({
+					type: "Feature",
+					geometry: { type: "LineString", coordinates: traveled },
+				});
+			}
+		}
+
+		if (accuracy <= 30 && map.current && !userInteractingRef.current) {
+			map.current.easeTo({
+				center: [longitude, latitude],
+				bearing: getBearing(latitude, longitude, destination.lat, destination.lng),
+				pitch: 60,
+				duration: 1000,
+				essential: false,
+			});
+		}
+
+		setNavigationState((prev) => {
+			if (!prev || prev.mode !== "navigating") return prev;
+			if (distanceRemaining < 15) {
+				return { ...prev, distanceRemaining: 0, arrived: true };
+			}
+			return { ...prev, distanceRemaining };
+		});
+	}
+
+	function endNavigation() {
+		userInteractingRef.current = false;
+		setShowRecenter(false);
+
+		setNavigationState((prev) => {
+			if (prev?.watchId) navigator.geolocation.clearWatch(prev.watchId);
+			return null;
+		});
+
+		if (map.current) {
+			map.current.getSource("route").setData({
+				type: "Feature",
+				geometry: { type: "LineString", coordinates: [] },
+			});
+			map.current.getSource("route-traveled").setData({
+				type: "Feature",
+				geometry: { type: "LineString", coordinates: [] },
+			});
+			if (preNavCameraRef.current) {
+				map.current.flyTo({
+					center: preNavCameraRef.current.center,
+					zoom: preNavCameraRef.current.zoom,
+					pitch: preNavCameraRef.current.pitch ?? 0,
+					bearing: preNavCameraRef.current.bearing ?? 0,
+					duration: 800,
+				});
+			}
+		}
+	}
+
 	useEffect(() => {
 		if (mapInitialized.current) return;
 		mapInitialized.current = true;
@@ -411,6 +618,29 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 		});
 
 		map.current.on("load", () => {
+			map.current.addSource("route", {
+				type: "geojson",
+				data: { type: "Feature", geometry: { type: "LineString", coordinates: [] } },
+			});
+			map.current.addSource("route-traveled", {
+				type: "geojson",
+				data: { type: "Feature", geometry: { type: "LineString", coordinates: [] } },
+			});
+			map.current.addLayer({
+				id: "route-line",
+				type: "line",
+				source: "route",
+				layout: { "line-join": "round", "line-cap": "round" },
+				paint: { "line-color": "#E8450A", "line-width": 5, "line-opacity": 0.85 },
+			});
+			map.current.addLayer({
+				id: "route-line-traveled",
+				type: "line",
+				source: "route-traveled",
+				layout: { "line-join": "round", "line-cap": "round" },
+				paint: { "line-color": "#999999", "line-width": 5, "line-opacity": 0.5 },
+			});
+
 			// Load markers now if artworks already arrived; otherwise the artworks
 			// useEffect will call loadAllMarkers once they come in.
 			if (artworksRef.current.length > 0 && !markersLoadedRef.current) {
@@ -457,11 +687,45 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 			} catch {
 				// navigator.permissions not available (old iOS Safari) — leave as pending
 			}
+
+			const interactionStart = () => {
+				userInteractingRef.current = true;
+				setShowRecenter(true);
+			};
+			map.current.on("dragstart", interactionStart);
+			map.current.on("pitchstart", interactionStart);
+			map.current.on("rotatestart", interactionStart);
 		});
 	}, []);
 
-	const panelVisible = !panelMinimized && !sheetContent;
-	const pillVisible = panelMinimized && !sheetContent;
+	useEffect(() => {
+		return () => {
+			if (navigationState?.watchId) {
+				navigator.geolocation.clearWatch(navigationState.watchId);
+			}
+		};
+	}, [navigationState?.watchId]);
+
+	function handleRecenter() {
+		userInteractingRef.current = false;
+		setShowRecenter(false);
+		if (lastPosRef.current && navigationState && map.current) {
+			map.current.flyTo({
+				center: [lastPosRef.current.lon, lastPosRef.current.lat],
+				bearing: getBearing(
+					lastPosRef.current.lat, lastPosRef.current.lon,
+					navigationState.destination.lat, navigationState.destination.lng,
+				),
+				pitch: 60,
+				zoom: 17,
+				duration: 600,
+				essential: true,
+			});
+		}
+	}
+
+	const panelVisible = !panelMinimized && !sheetContent && !navigationState;
+	const pillVisible = panelMinimized && !sheetContent && !navigationState;
 
 	return (
 		<>
@@ -541,6 +805,8 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 				content={sheetContent}
 				onClose={() => setSheetContent(null)}
 				onVerify={verifyArtwork}
+				onFetchRoute={fetchRoute}
+				navigationMode={!!navigationState}
 				isFound={
 					sheetContent?.art
 						? foundIds.has(sheetContent.art.objectid)
@@ -556,6 +822,23 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 				favoritesLoading={favoritesLoading}
 				locationStatus={locationStatus}
 			/>
+			{navigationState && (
+				<DirectionsPanel
+					navigationState={navigationState}
+					onBeginNavigation={beginNavigation}
+					onEndNavigation={endNavigation}
+					isGuest={isGuest}
+				/>
+			)}
+			{navigationState?.mode === "navigating" && (
+				<button
+					className={`recenter-btn${showRecenter ? " recenter-btn--visible" : " recenter-btn--hidden"}${isGuest ? " recenter-btn--guest" : ""}`}
+					onClick={handleRecenter}
+					aria-label="Re-center map"
+				>
+					⊙
+				</button>
+			)}
 		</>
 	);
 }

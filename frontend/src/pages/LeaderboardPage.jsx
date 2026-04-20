@@ -14,20 +14,14 @@ function getInitials(name) {
 }
 
 function RankRow({ u, isMe }) {
-	const rankColor = RANK_COLORS[u.rank] ?? null;
 	return (
 		<div className={`lb-row${isMe ? " lb-row-current" : ""}`}>
-			<span
-				className="lb-row-rank"
-				style={rankColor ? { color: rankColor } : undefined}
-			>
-				#{u.rank}
-			</span>
+			<span className="lb-row-rank">{u.rank}</span>
 			<div className="lb-row-avatar">{getInitials(u.display_name)}</div>
 			<div className="lb-row-info">
 				<span className="lb-row-name">
-					{u.display_name}
-					{isMe ? " (you)" : ""}
+					<span className="lb-row-name-text">{u.display_name}</span>
+					{isMe && <span className="lb-row-you-tag">you</span>}
 				</span>
 				<span className="lb-row-sub">{u.total_finds} artworks found</span>
 			</div>
@@ -41,6 +35,7 @@ export default function LeaderboardPage() {
 	const [rankings, setRankings] = useState([]);
 	const [me, setMe] = useState(null);
 	const [loading, setLoading] = useState(true);
+	const [expanded, setExpanded] = useState(false);
 
 	useEffect(() => {
 		async function load() {
@@ -74,7 +69,10 @@ export default function LeaderboardPage() {
 		{ cls: "podium-bronze", label: "#3" },
 	];
 
-	const meInTop20 = me && rankings.some((u) => u.id === me.id);
+	const meRank = me?.rank ?? null;
+	const meInTop3 = meRank !== null && meRank <= 3;
+	const meInList = meRank !== null && meRank <= 10;
+	const meUnranked = user && !me;
 
 	if (loading) {
 		return (
@@ -107,7 +105,7 @@ export default function LeaderboardPage() {
 							u ? (
 								<div
 									key={u.id}
-									className={`lb-podium-item ${podiumMeta[i].cls}`}
+									className={`lb-podium-item ${podiumMeta[i].cls}${meInTop3 && u.id === user?.id ? " lb-podium-item--me" : ""}`}
 								>
 									<div className="lb-podium-avatar">
 										{getInitials(u.display_name)}
@@ -126,25 +124,64 @@ export default function LeaderboardPage() {
 						)}
 					</div>
 
-					{/* All rankings */}
+					{/* Your Rank card — between podium and list */}
+					{user && !meInTop3 && !meInList && (
+						meUnranked ? (
+							<div className="lb-your-rank-card lb-your-rank-unranked">
+								<div className="lb-yr-avatar lb-yr-avatar--empty">?</div>
+								<div className="lb-yr-info">
+									<div className="lb-yr-label">your rank</div>
+									<div className="lb-yr-name">Not yet ranked</div>
+									<div className="lb-yr-pts">Find artworks to earn points</div>
+								</div>
+								<span className="lb-yr-rank">—</span>
+							</div>
+						) : me ? (
+							<div className="lb-your-rank-card">
+								<div className="lb-yr-avatar">{getInitials(me.display_name)}</div>
+								<div className="lb-yr-info">
+									<div className="lb-yr-label">your rank</div>
+									<div className="lb-yr-name">You</div>
+									<div className="lb-yr-pts">{me.score} pts</div>
+								</div>
+								<span className="lb-yr-rank">#{me.rank}</span>
+							</div>
+						) : null
+					)}
+
+					{/* Rankings list — ranks 4 onward */}
 					<div className="page-card lb-rankings-card">
-						<h3 className="lb-section-title">All Rankings</h3>
-						{rankings.map((u) => (
+						<h3 className="lb-section-title">Rankings</h3>
+						{rankings.slice(3, expanded ? 20 : 10).map((u) => (
 							<RankRow
 								key={u.id}
 								u={u}
 								isMe={!!(me && u.id === me.id)}
 							/>
 						))}
-					</div>
 
-					{/* Pinned card when current user is outside the top 20 */}
-					{me && !meInTop20 && (
-						<div className="page-card lb-rankings-card">
-							<h3 className="lb-section-title">Your Ranking</h3>
-							<RankRow u={me} isMe={true} />
-						</div>
-					)}
+						{/* Dashed separator + pinned me row when outside top 10 */}
+						{!meInList && !meUnranked && me && (
+							<>
+								<div className="lb-separator">
+									<div className="lb-sep-line" />
+									<span className="lb-sep-label">{me.rank - 10} below</span>
+									<div className="lb-sep-line" />
+								</div>
+								<RankRow u={me} isMe={true} />
+							</>
+						)}
+
+						{/* Show more / show less */}
+						{rankings.length > 10 && (
+							<button
+								className="lb-show-more-btn"
+								onClick={() => setExpanded((e) => !e)}
+							>
+								{expanded ? "Show less" : "Show more"}
+							</button>
+						)}
+					</div>
 				</>
 			)}
 
@@ -152,12 +189,8 @@ export default function LeaderboardPage() {
 			<div className="page-card lb-how-card">
 				<h3 className="lb-section-title">How to Earn Points</h3>
 				<div className="lb-how-item">
-					<span className="lb-how-icon lb-how-orange">📍</span>
-					<span>Find an artwork — earn 5 points</span>
-				</div>
-				<div className="lb-how-item">
-					<span className="lb-how-icon lb-how-blue">✓</span>
-					<span>Get verified — earn 10 points (coming soon)</span>
+					<span className="lb-how-icon lb-how-orange">📷</span>
+					<span>Visit an artwork in person and verify with a photo — earn 10 points</span>
 				</div>
 			</div>
 		</div>

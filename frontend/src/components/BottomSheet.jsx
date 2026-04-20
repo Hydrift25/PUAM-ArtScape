@@ -212,8 +212,7 @@ export default function BottomSheet({
 					<div className="bs-cta-card">
 						<p className="bs-cta-title">Ready to Visit?</p>
 						<p className="bs-cta-subtitle">
-							Sign in to participate in scavenger hunts and earn points
-							for visiting artworks!
+							Sign in to take photos at artworks, earn 10 points per verified find, and compete on the leaderboard.
 						</p>
 						<a href="/api/auth/login" className="bs-cta-btn">
 							🔒 Sign In to Start
@@ -304,11 +303,11 @@ export default function BottomSheet({
 							disabled={isFound || favoritesLoading || locationStatus === "denied"}
 							style={favoritesLoading ? { opacity: 0.5 } : undefined}
 						>
-							{isFound ? "✅ Visited" : "📍 Mark as Visited"}
+							{isFound ? "✅ Verified" : "📷 Take Photo to Verify"}
 						</button>
 						{!isFound && locationStatus === "denied" && (
 							<p className="bs-loc-denied-note">
-								Enable location to verify you&apos;re near this artwork.
+								Enable location to confirm you&apos;re near this artwork before verifying.
 							</p>
 						)}
 						<button

@@ -266,29 +266,20 @@ def get_finds(user_id):
 
 def get_scavenger_stats(user_id):
     query = """
-        SELECT
-            COUNT(*)                          AS total_finds,
-            COUNT(*) FILTER (WHERE verified)  AS verified_finds,
-            (SELECT COUNT(*) FROM favorites WHERE user_id = %s) AS favorites_count
+        SELECT COUNT(*) AS total_finds
         FROM scavenger_hunt_finds
         WHERE user_id = %s;
     """
     with contextlib.closing(psycopg.connect(db_url)) as conn:
         with contextlib.closing(conn.cursor()) as cur:
-            cur.execute(query, (user_id, user_id))
+            cur.execute(query, (user_id,))
             row = cur.fetchone()
 
-    total_finds    = int(row[0])
-    verified_finds = int(row[1])
-    favorites_count = int(row[2])
-    unverified_finds = total_finds - verified_finds
-    total_score = verified_finds * 10 + unverified_finds * 3 + favorites_count * 1
+    total_finds = int(row[0])
 
     return {
-        "total_finds":     total_finds,
-        "verified_finds":  verified_finds,
-        "favorites_count": favorites_count,
-        "total_score":     total_score,
+        "total_finds": total_finds,
+        "total_score": total_finds * 10,
     }
 
 
@@ -299,22 +290,18 @@ def get_leaderboard(limit=20):
                 u.id,
                 u.display_name,
                 u.email,
-                COUNT(s.objectid)                                   AS total_finds,
-                COUNT(s.objectid) FILTER (WHERE s.verified)         AS verified_finds,
-                COUNT(s.objectid) FILTER (WHERE NOT s.verified)     AS unverified_finds,
-                COUNT(s.objectid) FILTER (WHERE s.verified)     * 10
-                + COUNT(s.objectid) FILTER (WHERE NOT s.verified) * 5  AS score
+                COUNT(s.objectid)           AS total_finds,
+                COUNT(s.objectid) * 10      AS score
             FROM users u
             LEFT JOIN scavenger_hunt_finds s ON u.id = s.user_id
             GROUP BY u.id, u.display_name, u.email
+            HAVING COUNT(s.objectid) > 0
         )
         SELECT
             id,
             display_name,
             email,
             total_finds,
-            verified_finds,
-            unverified_finds,
             score,
             RANK() OVER (ORDER BY score DESC) AS rank
         FROM scores
@@ -328,14 +315,12 @@ def get_leaderboard(limit=20):
 
     return [
         {
-            "id":               r[0],
-            "display_name":     r[1],
-            "email":            r[2],
-            "total_finds":      int(r[3]),
-            "verified_finds":   int(r[4]),
-            "unverified_finds": int(r[5]),
-            "score":            int(r[6]),
-            "rank":             int(r[7]),
+            "id":           r[0],
+            "display_name": r[1],
+            "email":        r[2],
+            "total_finds":  int(r[3]),
+            "score":        int(r[4]),
+            "rank":         int(r[5]),
         }
         for r in rows
     ]
@@ -348,14 +333,12 @@ def get_leaderboard_me(user_id):
                 u.id,
                 u.display_name,
                 u.email,
-                COUNT(s.objectid)                                   AS total_finds,
-                COUNT(s.objectid) FILTER (WHERE s.verified)         AS verified_finds,
-                COUNT(s.objectid) FILTER (WHERE NOT s.verified)     AS unverified_finds,
-                COUNT(s.objectid) FILTER (WHERE s.verified)     * 10
-                + COUNT(s.objectid) FILTER (WHERE NOT s.verified) * 5  AS score
+                COUNT(s.objectid)           AS total_finds,
+                COUNT(s.objectid) * 10      AS score
             FROM users u
             LEFT JOIN scavenger_hunt_finds s ON u.id = s.user_id
             GROUP BY u.id, u.display_name, u.email
+            HAVING COUNT(s.objectid) > 0
         ),
         ranked AS (
             SELECT *, RANK() OVER (ORDER BY score DESC) AS rank
@@ -366,8 +349,6 @@ def get_leaderboard_me(user_id):
             display_name,
             email,
             total_finds,
-            verified_finds,
-            unverified_finds,
             score,
             rank
         FROM ranked
@@ -382,14 +363,12 @@ def get_leaderboard_me(user_id):
         return None
 
     return {
-        "id":               row[0],
-        "display_name":     row[1],
-        "email":            row[2],
-        "total_finds":      int(row[3]),
-        "verified_finds":   int(row[4]),
-        "unverified_finds": int(row[5]),
-        "score":            int(row[6]),
-        "rank":             int(row[7]),
+        "id":           row[0],
+        "display_name": row[1],
+        "email":        row[2],
+        "total_finds":  int(row[3]),
+        "score":        int(row[4]),
+        "rank":         int(row[5]),
     }
 
 

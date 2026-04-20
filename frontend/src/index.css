@@ -1629,6 +1629,16 @@ body:has(.map-container-guest) .nearest-panel {
     font-size: 0.9rem;
     font-weight: 600;
     color: #1a1a1a;
+    display: flex;
+    align-items: center;
+    gap: 0;
+}
+
+.lb-row-name-text {
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .lb-row-sub {
@@ -1676,6 +1686,132 @@ body:has(.map-container-guest) .nearest-panel {
     color: #888;
     text-align: center;
     padding: 32px 16px;
+}
+
+.lb-your-rank-card {
+    margin: 1.25rem 1rem 0;
+    background: #FDF3E7;
+    border: 1.5px solid #E8450A;
+    border-radius: 16px;
+    padding: 0.75rem 1rem;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.lb-your-rank-card.lb-your-rank-unranked {
+    background: #f5f5f5;
+    border-style: dashed;
+    border-color: #e0e0e0;
+}
+
+.lb-yr-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: #E8450A;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 500;
+    flex-shrink: 0;
+}
+
+.lb-yr-avatar--empty {
+    background: #ccc;
+}
+
+.lb-yr-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.lb-yr-label {
+    font-size: 10px;
+    color: #E8450A;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.lb-your-rank-unranked .lb-yr-label {
+    color: #888;
+}
+
+.lb-yr-name {
+    font-size: 14px;
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.lb-yr-pts {
+    font-size: 12px;
+    color: #888;
+}
+
+.lb-yr-rank {
+    font-size: 22px;
+    font-weight: 500;
+    color: #E8450A;
+}
+
+.lb-your-rank-unranked .lb-yr-rank {
+    color: #888;
+}
+
+.lb-podium-item--me {
+    outline: 2.5px solid #E8450A;
+    outline-offset: 2px;
+    border-radius: 8px;
+}
+
+.lb-row-you-tag {
+    display: inline-block;
+    font-size: 10px;
+    background: #E8450A;
+    color: #fff;
+    border-radius: 4px;
+    padding: 1px 5px;
+    margin-left: 6px;
+    flex-shrink: 0;
+}
+
+.lb-separator {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 0;
+}
+
+.lb-sep-line {
+    flex: 1;
+    border-top: 1.5px dashed #e8e8e8;
+}
+
+.lb-sep-label {
+    font-size: 11px;
+    color: #888;
+    white-space: nowrap;
+}
+
+.lb-show-more-btn {
+    display: block;
+    width: calc(100% - 2rem);
+    margin: 10px 1rem 0;
+    padding: 9px;
+    border: 0.5px solid #e8e8e8;
+    border-radius: 8px;
+    background: none;
+    font-size: 13px;
+    cursor: pointer;
+    color: #555;
+}
+
+.lb-show-more-btn:hover {
+    background: #f5f5f5;
 }
 
 /* ============================================================

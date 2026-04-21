@@ -4,6 +4,22 @@ from flask import send_from_directory, session, redirect, url_for
 from authlib.integrations.flask_client import OAuth
 from flask_cors import CORS
 from app.database import db
+from multiprocessing import Process, Queue
+import torch
+import clip
+from PIL import Image
+from io import BytesIO
+import requests
+import cloudinary.uploader
+from dotenv import load_dotenv
+from shared import image_verify_queue
+
+
+print("QUEUE ID (Flask):", id(image_verify_queue))
+
+load_dotenv()
+
+SCRIPT_DIR = os.path.dirname(__file__)
 
 #-----------------------------------------------------------------------
 
@@ -93,13 +109,24 @@ def update_visited_artwork():
 
 @app.route("/api/scavenger/find", methods=['POST'])
 def scavenger_find():
+    print(flask.request.data)
+    print(flask.request.get_json())
     user = session.get("user")
     if not user:
         return flask.jsonify({"error": "Not logged in"}), 401
-    objectid = flask.request.json.get("objectid")
+
+    objectid = flask.request.json.get("currObjectId")
+    user_image_url = flask.request.json.get("userImageUrl")
     if not objectid:
         return flask.jsonify({"error": "No objectid provided"}), 400
-    db.record_find(user["id"], objectid)
+    if not user_image_url:
+        return flask.jsonify({"error": "No user image URL provided"}), 400
+
+    db.record_find(user["id"], objectid, user_image_url)
+
+    print("ENQUEING JOB: ", user["id"], objectid, user_image_url, id(image_verify_queue))
+    image_verify_queue.put((user["id"], objectid, user_image_url))
+
     return flask.jsonify({"success": True})
 
 @app.route("/api/scavenger/verify/<int:objectid>", methods=['POST'])
@@ -170,3 +197,22 @@ def auth_me():
     if user:
         return flask.jsonify(user)
     return flask.jsonify({"user": None})
+
+#-----------------------------------------------------------------------
+
+@app.route("/api/upload", methods=["POST"])
+def upload():
+    file = flask.request.files.get("image")
+
+    if not file:
+        return flask.jsonify({"error": "No file"}), 400
+
+    # Upload to Cloudinary
+    result = cloudinary.uploader.upload(file)
+
+    image_url = result["secure_url"]
+    print(image_url)
+
+    return flask.jsonify({
+        "image_url": image_url,
+    })

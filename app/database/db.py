@@ -210,15 +210,15 @@ def update_visited_artwork(user_id, objectid):
             conn.commit()
 
 
-def record_find(user_id, objectid):
+def record_find(user_id, objectid, user_photo_url):
     query = """
-        INSERT INTO scavenger_hunt_finds (user_id, objectid, verified)
-        VALUES (%s, %s, FALSE)
+        INSERT INTO scavenger_hunt_finds (user_id, objectid, photo_url, verified)
+        VALUES (%s, %s, %s, FALSE)
         ON CONFLICT (user_id, objectid) DO NOTHING;
     """
     with contextlib.closing(psycopg.connect(db_url)) as conn:
         with contextlib.closing(conn.cursor()) as cur:
-            cur.execute(query, (user_id, objectid))
+            cur.execute(query, (user_id, objectid, user_photo_url))
             conn.commit()
 
 

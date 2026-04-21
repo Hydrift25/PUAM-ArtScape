@@ -8,24 +8,28 @@ import requests
 from app.database import db
 import time
 from flask_socketio import SocketIO
+from pathlib import Path
+import re
 
 print("QUEUE ID (Worker):", id(image_verify_queue))
+
+DEVICE = torch.device("cpu")
 
 IMG_ACCEPTED = 1
 IMG_FAILED_LOCATION = 2
 IMG_FAILED_IMAGE = 3
 
 VERIFY_MIN_DIST_M = 200
+VERIFY_MIN_SIM_SCORE = 0.5
 
-SCRIPT_DIR = os.path.dirname(__file__)
+REF_EMBEDDINGS = {}
 
-DEVICE = torch.device("cpu")
-# oval with points ref image, for now
-
-rel_ref_path = "ref.pt"
-abs_ref_path = os.path.join(SCRIPT_DIR, rel_ref_path)
-
-REF_EMBEDDING = torch.load(abs_ref_path)
+for file in Path('embeddings').iterdir():
+    if file.is_file():
+        match = re.search(r"(\d+)_emb\.pt", file.name)
+        if match:
+            object_id = int(match.group(1))
+            REF_EMBEDDINGS[object_id] = torch.load(str(file))
 
 def load_model():
     model, preprocess = clip.load("ViT-B/32", device=DEVICE)
@@ -54,14 +58,18 @@ def process_verify_job(verify_job, model, preprocess):
         user_embedding = get_embedding(user_image, model, preprocess)
 
         # only works for oval with points!!
-        sim_score = cosine_similarity(REF_EMBEDDING, user_embedding)
+        if object_id in REF_EMBEDDINGS:
+            sim_score = cosine_similarity(REF_EMBEDDINGS[object_id], user_embedding)
 
-        if sim_score > 0.5:
-            print(f"HOORAY: {verify_job[0]} {verify_job[1]} {verify_job[2]} OK IMG!!", flush=True)
-            db.update_verify_state(user_id, objectid, IMG_ACCEPTED)
+            if sim_score > VERIFY_MIN_SIM_SCORE:
+                print(f"HOORAY: {verify_job[0]} {verify_job[1]} {verify_job[2]} OK IMG!!", flush=True)
+                db.update_verify_state(user_id, objectid, IMG_ACCEPTED)
+            else:
+                print(f"NOOOO IMG: {verify_job[0]} {verify_job[1]} {verify_job[2]} BAD IMG", flush=True)
+                db.update_verify_state(user_id, objectid, IMG_FAILED_IMAGE)
         else:
-            print(f"NOOOO IMG: {verify_job[0]} {verify_job[1]} {verify_job[2]} BAD IMG", flush=True)
-            db.update_verify_state(user_id, objectid, IMG_FAILED_IMAGE)
+            print(f"NOOOO OBJECT ID NOT FOUND: {verify_job[0]} {verify_job[1]} {verify_job[2]}", flush=True)
+
 
 def worker_loop(socketio):
     model, preprocess = load_model()

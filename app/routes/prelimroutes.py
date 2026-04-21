@@ -53,6 +53,8 @@ socketio = SocketIO(app, cors_allowed_origins="*")
 def handle_connect(auth):
     user_id = auth.get("user_id")
 
+    print(f"User id {user_id} joined socket!!!")
+
     if not user_id:
         return False  # reject connection
 
@@ -133,15 +135,18 @@ def scavenger_find():
 
     objectid = flask.request.json.get("currObjectId")
     user_image_url = flask.request.json.get("userImageUrl")
+    dist_to_object = flask.request.json.get("distToObject")
     if not objectid:
         return flask.jsonify({"error": "No objectid provided"}), 400
     if not user_image_url:
         return flask.jsonify({"error": "No user image URL provided"}), 400
+    if not dist_to_object:
+        return flask.jsonify({"error": "No distance to object provided"}), 400
 
     db.record_find(user["id"], objectid, user_image_url)
 
-    print("ENQUEING JOB: ", user["id"], objectid, user_image_url, id(image_verify_queue))
-    image_verify_queue.put((user["id"], objectid, user_image_url))
+    print("ENQUEING JOB: ", user["id"], objectid, user_image_url, dist_to_object, id(image_verify_queue))
+    image_verify_queue.put((user["id"], objectid, user_image_url, dist_to_object))
 
     return flask.jsonify({"success": True})
 
@@ -150,7 +155,7 @@ def scavenger_verify(objectid):
     user = session.get("user")
     if not user:
         return flask.jsonify({"error": "Not logged in"}), 401
-    db.verify_find(user["id"], objectid)
+    db.update_verify_state(user["id"], objectid, 1)
     return flask.jsonify({"success": True})
 
 @app.route("/api/scavenger/finds", methods=['GET'])

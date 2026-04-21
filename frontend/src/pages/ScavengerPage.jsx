@@ -42,13 +42,6 @@ export default function ScavengerPage({ artworks = [] }) {
 
 	mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN;
 
-	useEffect(() => {
-		fetch("/api/artworks")
-			.then((r) => r.json())
-			.then(setArtworks)
-			.catch(console.error);
-	}, []);
-
 	const refreshFindsAndStats = useCallback(async () => {
 		if (!user) return;
 		try {
@@ -133,26 +126,16 @@ export default function ScavengerPage({ artworks = [] }) {
 	}
 
 	async function handleVerifyUserSubmission(userImageUrl) {
-		if (marking.has(currObjectId)) return;
-		setMarking((prev) => new Set(prev).add(currObjectId));
 		try {
-
-
 			await fetch("/api/scavenger/find", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				credentials: "include",
 				body: JSON.stringify({ currObjectId, userImageUrl }),
 			});
-			// await refreshFindsAndStats();
+			// TODO: await refreshFindsAndStats();
 		} catch (err) {
 			console.error("Failed to mark found:", err);
-		} finally {
-			setMarking((prev) => {
-				const next = new Set(prev);
-				next.delete(currObjectId);
-				return next;
-			});
 		}
 	}
 

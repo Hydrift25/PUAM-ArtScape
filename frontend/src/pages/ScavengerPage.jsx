@@ -31,7 +31,6 @@ export default function ScavengerPage({ artworks = [] }) {
 	const [currLon, setCurrLon] = useState(null);
 	const lastPosRef = useRef(null);
 	const videoRef = useRef(null);
-	const VERIFY_RADIUS_M = 200; /* MOVE TO BACKEND */
 
 	function haversineMeters(lat1, lon1, lat2, lon2) {
 		const R = 6371000;
@@ -80,9 +79,9 @@ export default function ScavengerPage({ artworks = [] }) {
 		const socket = getSocket();
 		if (!socket) return;
 
-		const handler = (data) => {
+		const handler = async (data) => {
 			console.log("Image processed:", data.objectid);
-			refreshFindsAndStats();
+			await refreshFindsAndStats();
 		};
 
 		socket.on("image_processed", handler);

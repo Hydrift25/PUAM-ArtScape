@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import BottomSheet from "../components/BottomSheet";
@@ -11,6 +11,7 @@ import {
 	createUserMarkerEl,
 } from "../components/ArtworkMarker";
 import { useAuth } from "../context/AuthContext";
+import { getSocket } from "../services/socket";
 
 const FOUND_STORAGE_KEY = "artscape.foundIds";
 const VERIFY_RADIUS_M = 200;
@@ -23,8 +24,8 @@ function haversineMeters(lat1, lon1, lat2, lon2) {
 	const a =
 		Math.sin(dLat / 2) ** 2 +
 		Math.cos(toRad(lat1)) *
-			Math.cos(toRad(lat2)) *
-			Math.sin(dLon / 2) ** 2;
+		Math.cos(toRad(lat2)) *
+		Math.sin(dLon / 2) ** 2;
 	return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
@@ -76,6 +77,14 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 	const watchIdRef = useRef(null);
 	// Guards against double nearby fetch on the guest path (mirrors stylesResolvedRef)
 	const nearbyFetchedRef = useRef(false);
+	const [findsMap, setFindsMap] = useState(new Map());
+	const [cameraOpen, setCameraOpen] = useState(false);
+	const [stream, setStream] = useState(null);
+	const [capturedImage, setCapturedImage] = useState(null);
+	const [currObjectId, setCurrObjectId] = useState(null);
+	const [currLat, setCurrLat] = useState(null);
+	const [currLon, setCurrLon] = useState(null);
+	const videoRef = useRef(null);
 
 	// 'pending' | 'loading' | 'granted' | 'denied'
 	const [locationStatus, setLocationStatus] = useState("pending");
@@ -185,38 +194,168 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 		}
 	}, [isVisible]);
 
+	const refreshUserData = useCallback(async () => {
+		if (!user) {
+			setFavoritesLoading(false);
+			return;
+		}
+		try {
+			const [findsRes, favRes] = await Promise.all([
+				fetch("/api/scavenger/finds", { credentials: "include" }),
+				fetch("/api/artworks/favorites", { credentials: "include" }),
+			]);
+			if (findsRes.ok) {
+				const data = await findsRes.json();
+				// API returns objects [{objectid, ...}] — extract ids for Set membership checks
+				setFindsMap(new Map(data.map((f) => [f.objectid, f])));
+				setFoundIds(
+					new Set(
+						(data ?? [])
+							.filter((d) => d.verify_state === 1)
+							.map((d) => d.objectid)
+					)
+				);
+			}
+			if (favRes.ok) {
+				const data = await favRes.json();
+				setFavoritedIds(new Set((data ?? []).map((d) => d.objectid)));
+			}
+		} catch (err) {
+			console.error("Failed to fetch user artwork data:", err);
+		} finally {
+			setFavoritesLoading(false);
+		}
+	}, [user]);
+
 	useEffect(() => {
-		const fetchData = async () => {
-			if (!user) {
-				setFavoritesLoading(false);
-				return;
-			}
-			try {
-				const [visitedRes, favRes] = await Promise.all([
-					fetch("/api/artworks/visited", { credentials: "include" }),
-					fetch("/api/artworks/favorites", { credentials: "include" }),
-				]);
-				if (visitedRes.ok) {
-					const data = await visitedRes.json();
-					// API returns objects [{objectid, ...}] — extract ids for Set membership checks
-					setFoundIds(new Set((data ?? []).map((d) => d.objectid)));
-				}
-				if (favRes.ok) {
-					const data = await favRes.json();
-					setFavoritedIds(new Set((data ?? []).map((d) => d.objectid)));
-				}
-			} catch (err) {
-				console.error("Failed to fetch user artwork data:", err);
-			} finally {
-				setFavoritesLoading(false);
-			}
-		};
-		fetchData();
-	}, []);
+		refreshUserData();
+	}, [refreshUserData]);
 
 	useEffect(() => {
 		localStorage.setItem(FOUND_STORAGE_KEY, JSON.stringify([...foundIds]));
 	}, [foundIds]);
+
+	useEffect(() => {
+		const socket = getSocket();
+		if (!socket) return;
+
+		const handler = async (data) => {
+			console.log("Image processed:", data.objectid);
+			await refreshUserData();
+		};
+
+		socket.on("image_processed", handler);
+
+		return () => {
+			socket.off("image_processed", handler);
+		};
+	}, [refreshUserData]);
+
+	// Attach stream to video element once camera modal is open
+	useEffect(() => {
+		if (cameraOpen && stream && videoRef.current && !capturedImage) {
+			videoRef.current.srcObject = stream;
+		}
+	}, [cameraOpen, stream, capturedImage]);
+
+	// Stop stream on unmount
+	useEffect(() => {
+		return () => {
+			if (stream) stream.getTracks().forEach((t) => t.stop());
+		};
+	}, [stream]);
+
+	async function openCamera() {
+		try {
+			const s = await navigator.mediaDevices.getUserMedia({
+				video: { facingMode: "environment" },
+			});
+			setStream(s);
+			setCapturedImage(null);
+			setCameraOpen(true);
+		} catch {
+			alert(
+				"Camera permission denied. Please allow camera access to capture artworks.",
+			);
+		}
+	}
+
+	function capturePhoto() {
+		if (!videoRef.current) return;
+		const canvas = document.createElement("canvas");
+		canvas.width = videoRef.current.videoWidth;
+		canvas.height = videoRef.current.videoHeight;
+		canvas.getContext("2d").drawImage(videoRef.current, 0, 0);
+		setCapturedImage(canvas.toDataURL("image/jpeg"));
+		stream.getTracks().forEach((t) => t.stop());
+		setStream(null);
+	}
+
+	async function uploadPhoto() {
+		if (!capturedImage) return;
+
+		const blob = await fetch(capturedImage).then(res => res.blob());
+
+		const formData = new FormData();
+		formData.append("image", blob, "photo.jpg");
+
+		const response = await fetch("/api/upload", {
+			method: "POST",
+			body: formData,
+		});
+
+		const data = await response.json();
+
+		handleVerifyUserSubmission(data.image_url);
+	}
+
+	function closeCamera() {
+		if (stream) stream.getTracks().forEach((t) => t.stop());
+		setStream(null);
+		setCapturedImage(null);
+		setCameraOpen(false);
+	}
+
+	async function handleVerifyUserSubmission(userImageUrl) {
+		try {
+			let distToObject = 0;
+			try {
+				let userLat, userLon;
+				if (lastPosRef.current) {
+					userLat = lastPosRef.current.lat;
+					userLon = lastPosRef.current.lon;
+				} else {
+					const pos = await fetchGeoPosition();
+					userLat = pos.coords.latitude;
+					userLon = pos.coords.longitude;
+					lastPosRef.current = { lat: userLat, lon: userLon };
+				}
+				distToObject = haversineMeters(
+					userLat,
+					userLon,
+					Number(currLat),
+					Number(currLon),
+				);
+			}
+			catch (e) {
+				console.error("Verify failed:", e);
+				alert(
+					"Couldn't get your location. Enable location services and try again.",
+				);
+			}
+
+			await fetch("/api/scavenger/find", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				credentials: "include",
+				body: JSON.stringify({ currObjectId, userImageUrl, distToObject }),
+			});
+			// TODO: UPDATE
+			// await refreshFindsAndStats();
+		} catch (err) {
+			console.error("Failed to mark found:", err);
+		}
+	}
 
 	async function markFound(objectid) {
 		if (!user) return;
@@ -729,6 +868,63 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 
 	return (
 		<>
+			{/* Camera modal */}
+			{cameraOpen && (
+				<div className="camera-overlay">
+					<div className="camera-modal">
+						<button
+							className="camera-close-btn"
+							onClick={closeCamera}
+							aria-label="Close camera"
+						>
+							✕
+						</button>
+						{capturedImage ? (
+							<>
+								<img
+									src={capturedImage}
+									className="camera-captured"
+									alt="Captured"
+								/>
+								<div className="camera-modal-actions">
+									<button
+										className="camera-retake-btn"
+										onClick={() => {
+											setCapturedImage(null);
+											openCamera();
+										}}
+									>
+										Retake
+									</button>
+									<button
+										className="camera-confirm-btn"
+										onClick={() => {
+											uploadPhoto();
+											closeCamera();
+										}}
+									>
+										Confirm
+									</button>
+								</div>
+							</>
+						) : (
+							<>
+								<video
+									ref={videoRef}
+									autoPlay
+									playsInline
+									className="camera-video"
+								/>
+								<button
+									className="camera-capture-btn"
+									onClick={capturePhoto}
+									aria-label="Capture photo"
+								/>
+							</>
+						)}
+					</div>
+				</div>
+			)}
 			<div
 				ref={mapContainer}
 				className={`map-container ${isGuest ? "map-container-guest" : "map-container-auth"}`}
@@ -804,13 +1000,20 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 				key={sheetContent?.art?.objectid}
 				content={sheetContent}
 				onClose={() => setSheetContent(null)}
-				onVerify={verifyArtwork}
+				onVerify={() => {
+					setCurrObjectId(sheetContent.art.objectid);
+					setCurrLat(sheetContent.art.lat);
+					setCurrLon(sheetContent.art.lon);
+					openCamera();
+				}}
 				onFetchRoute={fetchRoute}
 				navigationMode={!!navigationState}
-				isFound={
+				verifyState={
 					sheetContent?.art
-						? foundIds.has(sheetContent.art.objectid)
-						: false
+						? findsMap.has(sheetContent.art.objectid)
+							? findsMap.get(sheetContent.art.objectid).verify_state
+							: 4
+						: 4
 				}
 				isFavorited={
 					sheetContent?.art

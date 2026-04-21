@@ -50,7 +50,7 @@ def process_verify_job(verify_job, model, preprocess):
     user_id, objectid, image_url, dist_to_object = verify_job
 
     if dist_to_object > VERIFY_MIN_DIST_M:
-        print(f"NOOOO LOC: {verify_job[0]} {verify_job[1]} {verify_job[2]} TOO FAR", flush=True)
+        print(f"NOOOO LOC: {verify_job[0]} {verify_job[1]} {verify_job[2]} TOO FAR")
         db.update_verify_state(user_id, objectid, IMG_FAILED_LOCATION)
     else:
         response = requests.get(image_url)
@@ -62,22 +62,21 @@ def process_verify_job(verify_job, model, preprocess):
             sim_score = cosine_similarity(REF_EMBEDDINGS[object_id], user_embedding)
 
             if sim_score > VERIFY_MIN_SIM_SCORE:
-                print(f"HOORAY: {verify_job[0]} {verify_job[1]} {verify_job[2]} OK IMG!!", flush=True)
+                print(f"HOORAY: {verify_job[0]} {verify_job[1]} {verify_job[2]} OK IMG!!")
                 db.update_verify_state(user_id, objectid, IMG_ACCEPTED)
             else:
-                print(f"NOOOO IMG: {verify_job[0]} {verify_job[1]} {verify_job[2]} BAD IMG", flush=True)
+                print(f"NOOOO IMG: {verify_job[0]} {verify_job[1]} {verify_job[2]} BAD IMG")
                 db.update_verify_state(user_id, objectid, IMG_FAILED_IMAGE)
         else:
-            print(f"NOOOO OBJECT ID NOT FOUND: {verify_job[0]} {verify_job[1]} {verify_job[2]}", flush=True)
+            print(f"NOOOO OBJECT ID NOT FOUND: {verify_job[0]} {verify_job[1]} {verify_job[2]}")
 
 
 def worker_loop(socketio):
     model, preprocess = load_model()
 
     while True:
-        print(f"Hello {id(image_verify_queue)}")
         verify_job = image_verify_queue.get() # user_id, objectid, photo_url
-        print(f"Got verify job: {verify_job[0]} {verify_job[1]} {verify_job[2]} {verify_job[3]}", flush=True)
+        print(f"Got verify job: {verify_job[0]} {verify_job[1]} {verify_job[2]} {verify_job[3]}")
 
         process_verify_job(verify_job, model, preprocess)
 

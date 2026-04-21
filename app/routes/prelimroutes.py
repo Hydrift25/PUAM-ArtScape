@@ -14,7 +14,8 @@ import requests
 import cloudinary.uploader
 from dotenv import load_dotenv
 from shared import image_verify_queue
-
+from flask_socketio import SocketIO, join_room
+from flask import request
 
 print("QUEUE ID (Flask):", id(image_verify_queue))
 
@@ -45,6 +46,17 @@ oauth.register(
     server_metadata_url='https://accounts.google.com/.well-known/openid-configuration',
     client_kwargs={'scope': 'openid email profile'},
 )
+
+socketio = SocketIO(app, cors_allowed_origins="*")
+
+@socketio.on('connect')
+def handle_connect(auth):
+    user_id = auth.get("user_id")
+
+    if not user_id:
+        return False  # reject connection
+
+    join_room(f"user_{user_id}")
 
 #-----------------------------------------------------------------------
 

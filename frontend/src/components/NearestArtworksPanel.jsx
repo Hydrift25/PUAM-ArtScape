@@ -1,11 +1,20 @@
 const RANK_LABELS = ["#1", "#2", "#3"];
 
-export default function NearestArtworksPanel({ artworks, onSelect, hidden }) {
+export default function NearestArtworksPanel({ artworks, onSelect, hidden, onMinimize }) {
 	if (!artworks || artworks.length === 0) return null;
 
 	return (
 		<div className={`nearest-panel${hidden ? " nearest-panel--hidden" : ""}`}>
-			<h3 className="nearest-panel-title">Nearest Artworks</h3>
+			<div className="nearest-panel-header">
+				<h3 className="nearest-panel-title">Nearest Artworks</h3>
+				<button
+					className="panel-minimize-btn"
+					onClick={onMinimize}
+					aria-label="Minimize panel"
+				>
+					✕
+				</button>
+			</div>
 			{artworks.map((art, i) => {
 				const thumb = art.image_url
 					? `${art.image_url}/full/120,/0/default.jpg`

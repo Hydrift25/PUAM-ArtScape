@@ -2,12 +2,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import mapboxgl from "mapbox-gl";
 
-export default function ScavengerPage() {
+export default function ScavengerPage({ artworks = [] }) {
 	const { user, login } = useAuth();
-	const [artworks, setArtworks] = useState([]);
 	const [finds, setFinds] = useState([]);
 	const [stats, setStats] = useState(null);
-	const [marking, setMarking] = useState(new Set());
 	const [cameraOpen, setCameraOpen] = useState(false);
 	const [stream, setStream] = useState(null);
 	const [capturedImage, setCapturedImage] = useState(null);
@@ -161,7 +159,6 @@ export default function ScavengerPage() {
 	const findsMap = new Map(finds.map((f) => [f.objectid, f]));
 	const total = artworks.length;
 	const foundCount = stats?.total_finds ?? 0;
-	const verifiedCount = stats?.verified_finds ?? 0;
 	const score = stats?.total_score ?? 0;
 	const pct = total ? Math.round((foundCount / total) * 100) : 0;
 
@@ -269,12 +266,7 @@ export default function ScavengerPage() {
 				<div className="scav-stats-row">
 					<div className="scav-stat-item">
 						<span className="scav-stat-val">{foundCount}</span>
-						<span className="scav-stat-label">Found</span>
-					</div>
-					<div className="scav-stat-divider" />
-					<div className="scav-stat-item">
-						<span className="scav-stat-val">{verifiedCount}</span>
-						<span className="scav-stat-label">Verified</span>
+						<span className="scav-stat-label">Artworks Found</span>
 					</div>
 					<div className="scav-stat-divider" />
 					<div className="scav-stat-item">
@@ -288,7 +280,6 @@ export default function ScavengerPage() {
 			<div className="scav-list">
 				{artworks.map((art) => {
 					const found = findsMap.has(art.objectid);
-					const isBusy = marking.has(art.objectid);
 					const thumb = art.image_url
 						? `${art.image_url}/full/120,/0/default.jpg`
 						: null;
@@ -318,28 +309,20 @@ export default function ScavengerPage() {
 									{found ? "✓ Verified" : "Not found"}
 								</span>
 							</div>
-							<div className="scav-card-actions">
-								{!found && (<button
-									className="scav-camera-btn"
-									onClick={() => {
-										setCurrObjectId(art.objectid);
-										openCamera();
-									}}
-									aria-label="Open camera"
-								>
-									📷
-								</button>
-								)}
-								{/* {!found && (
+							{!found && (
+								<div className="scav-card-actions">
 									<button
-										className="scav-mark-found-btn"
-										onClick={() => handleMarkFound(art.objectid)}
-										disabled={isBusy}
+										className="scav-camera-btn"
+										onClick={() => {
+											setCurrObjectId(art.objectid);
+											openCamera();
+										}}
+										aria-label="Take photo to verify"
 									>
-										{isBusy ? "…" : "Found"}
+										📷
 									</button>
-								)} */}
-							</div>
+								</div>
+							)}
 						</div>
 					);
 				})}

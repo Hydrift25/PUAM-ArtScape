@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import BottomSheet from "../components/BottomSheet";
+import DirectionsPanel from "../components/DirectionsPanel";
 import ScavengerSidebar from "../components/ScavengerSidebar";
 import NearestArtworksPanel from "../components/NearestArtworksPanel";
 import {
@@ -27,7 +28,15 @@ function haversineMeters(lat1, lon1, lat2, lon2) {
 	return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-function getCurrentPosition() {
+function getBearing(lat1, lon1, lat2, lon2) {
+	const dLon = (lon2 - lon1) * Math.PI / 180;
+	const y = Math.sin(dLon) * Math.cos(lat2 * Math.PI / 180);
+	const x = Math.cos(lat1 * Math.PI / 180) * Math.sin(lat2 * Math.PI / 180) -
+		Math.sin(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.cos(dLon);
+	return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+}
+
+function fetchGeoPosition() {
 	return new Promise((resolve, reject) => {
 		if (!navigator.geolocation) {
 			reject(new Error("Geolocation not supported"));
@@ -43,38 +52,163 @@ function getCurrentPosition() {
 
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN;
 
-export default function MapPage({ isGuest = false }) {
+export default function MapPage({ isGuest = false, artworks = [], isVisible = true }) {
 	const { user } = useAuth();
 	const mapContainer = useRef(null);
 	const map = useRef(null);
+	const mapInitialized = useRef(false);
 	const markersRef = useRef([]);
+	// objectid -> { el, art } — used by resolveMarkerStyles to mutate elements in-place
+	const markerElsRef = useRef(new Map());
 	const userMarkerRef = useRef(null);
 	const lastPosRef = useRef(null);
+	// Mirrors the artworks prop so the map.on("load") closure always sees fresh data
+	const artworksRef = useRef(artworks);
+	// Guards against double marker creation if artworks arrive before/after map load
+	const markersLoadedRef = useRef(false);
+	// Stores geolocation result so resolveMarkerStyles can be called after markers load
+	const geoPositionRef = useRef(null);
+	// Ensures resolveMarkerStyles only runs once
+	const stylesResolvedRef = useRef(false);
+	// Mirrors locationStatus state for closure access inside map.on("load")
+	const locationStatusRef = useRef("pending");
+	// Stores the watchPosition ID so we only start one watcher
+	const watchIdRef = useRef(null);
+	// Guards against double nearby fetch on the guest path (mirrors stylesResolvedRef)
+	const nearbyFetchedRef = useRef(false);
+
+	// 'pending' | 'loading' | 'granted' | 'denied'
+	const [locationStatus, setLocationStatus] = useState("pending");
+	const [showDeniedTooltip, setShowDeniedTooltip] = useState(false);
+	const [deniedBannerDismissed, setDeniedBannerDismissed] = useState(
+		() => sessionStorage.getItem("artscape.locDeniedDismissed") === "1",
+	);
 	const [sheetContent, setSheetContent] = useState(null);
-	const [allArtworks, setAllArtworks] = useState([]);
 	const [sidebarOpen, setSidebarOpen] = useState(false);
 	const [foundIds, setFoundIds] = useState(new Set());
+	const [favoritedIds, setFavoritedIds] = useState(new Set());
 	const [nearbyArtworks, setNearbyArtworks] = useState([]);
+	const [panelMinimized, setPanelMinimized] = useState(false);
+	// True until both /api/artworks/visited and /api/artworks/favorites resolve
+	const [favoritesLoading, setFavoritesLoading] = useState(true);
+
+	const [navigationState, setNavigationState] = useState(null);
+	const [showRecenter, setShowRecenter] = useState(false);
+	const preNavCameraRef = useRef(null);
+	// Mirrors navigationState for closure access in marker onclick handlers
+	const navigationStateRef = useRef(null);
+	const userInteractingRef = useRef(false);
+
+	// Updates both the ref (for closure access) and the state (for rendering)
+	function setLocStatus(status) {
+		locationStatusRef.current = status;
+		setLocationStatus(status);
+	}
+
+	// Keep ref in sync with prop
+	useEffect(() => {
+		artworksRef.current = artworks;
+	}, [artworks]);
+
+	useEffect(() => {
+		navigationStateRef.current = navigationState;
+	}, [navigationState]);
+
+	// When artworks arrive and map is already loaded, create markers if not done yet.
+	// Also trigger resolveMarkerStyles if geolocation already resolved first.
+	useEffect(() => {
+		if (!artworks.length || markersLoadedRef.current) return;
+		if (map.current && map.current.isStyleLoaded()) {
+			markersLoadedRef.current = true;
+			loadAllMarkers(artworks);
+			if (!isGuest && geoPositionRef.current && !stylesResolvedRef.current) {
+				resolveMarkerStyles(
+					geoPositionRef.current.lat,
+					geoPositionRef.current.lon,
+				);
+			}
+			if (isGuest && geoPositionRef.current) {
+				fetchNearbyData(geoPositionRef.current.lat, geoPositionRef.current.lon);
+			}
+		}
+		// If map isn't loaded yet, the map.on("load") callback handles initial marker creation
+	}, [artworks]); // eslint-disable-line react-hooks/exhaustive-deps
+
+	// Start watchPosition only after location is granted — iOS requires getUserMedia-style
+	// gesture before watchPosition will prompt, so we wait until getCurrentPosition succeeds.
+	useEffect(() => {
+		if (locationStatus !== "granted") return;
+		if (watchIdRef.current !== null) return;
+		if (!navigator.geolocation) return;
+
+		watchIdRef.current = navigator.geolocation.watchPosition(
+			(pos) => {
+				const { latitude: lat, longitude: lon } = pos.coords;
+				lastPosRef.current = { lat, lon };
+				if (!map.current) return;
+				if (!userMarkerRef.current) {
+					const el = createUserMarkerEl();
+					userMarkerRef.current = new mapboxgl.Marker(el)
+						.setLngLat([lon, lat])
+						.addTo(map.current);
+				} else {
+					userMarkerRef.current.setLngLat([lon, lat]);
+				}
+			},
+			(err) => console.error(err),
+			{ enableHighAccuracy: true, maximumAge: 10000 },
+		);
+	}, [locationStatus]); // eslint-disable-line react-hooks/exhaustive-deps
+
+	// When location is denied, upgrade existing muted markers to full-detail style in-place.
+	// This mirrors the resolveMarkerStyles approach but without the nearby API call.
+	useEffect(() => {
+		if (locationStatus !== "denied") return;
+		if (markerElsRef.current.size === 0) return;
+		markerElsRef.current.forEach(({ el, art }) => {
+			el.classList.remove("marker-all");
+			el.classList.add("marker-nearby");
+			el.style.opacity = "";
+			el.style.filter = "";
+			el.onclick = (e) => {
+				if (navigationStateRef.current) return;
+				e.stopPropagation();
+				setSheetContent({ art, type: "detailed" });
+			};
+		});
+	}, [locationStatus]); // eslint-disable-line react-hooks/exhaustive-deps
+
+	// Resize Mapbox canvas when the map tab is revealed after being hidden
+	useEffect(() => {
+		if (isVisible && map.current) {
+			map.current.resize();
+		}
+	}, [isVisible]);
 
 	useEffect(() => {
 		const fetchData = async () => {
 			if (!user) {
-				setFoundIds(new Set());
+				setFavoritesLoading(false);
 				return;
 			}
 			try {
-				const res = await fetch("/api/artworks/visited", {
-					credentials: "include",
-				});
-				if (!res.ok) {
-					setFoundIds(new Set());
-					return;
+				const [visitedRes, favRes] = await Promise.all([
+					fetch("/api/artworks/visited", { credentials: "include" }),
+					fetch("/api/artworks/favorites", { credentials: "include" }),
+				]);
+				if (visitedRes.ok) {
+					const data = await visitedRes.json();
+					// API returns objects [{objectid, ...}] — extract ids for Set membership checks
+					setFoundIds(new Set((data ?? []).map((d) => d.objectid)));
 				}
-				const data = await res.json();
-				setFoundIds(new Set(data ?? []));
+				if (favRes.ok) {
+					const data = await favRes.json();
+					setFavoritedIds(new Set((data ?? []).map((d) => d.objectid)));
+				}
 			} catch (err) {
-				console.error("Failed to fetch visited artworks:", err);
-				setFoundIds(new Set());
+				console.error("Failed to fetch user artwork data:", err);
+			} finally {
+				setFavoritesLoading(false);
 			}
 		};
 		fetchData();
@@ -116,7 +250,7 @@ export default function MapPage({ isGuest = false }) {
 				userLat = lastPosRef.current.lat;
 				userLon = lastPosRef.current.lon;
 			} else {
-				const pos = await getCurrentPosition();
+				const pos = await fetchGeoPosition();
 				userLat = pos.coords.latitude;
 				userLon = pos.coords.longitude;
 				lastPosRef.current = { lat: userLat, lon: userLon };
@@ -145,22 +279,107 @@ export default function MapPage({ isGuest = false }) {
 		}
 	}
 
-function clearMarkers() {
+	// Called when user taps "Enable Location" — must be a direct response to a user gesture
+	// so iOS Safari will actually show the permission prompt.
+	async function enableLocation() {
+		setLocStatus("loading");
+		try {
+			const pos = await fetchGeoPosition();
+			const { latitude: lat, longitude: lon } = pos.coords;
+			geoPositionRef.current = { lat, lon };
+			lastPosRef.current = { lat, lon };
+			if (map.current) map.current.setCenter([lon, lat]);
+			setLocStatus("granted");
+			if (!isGuest) resolveMarkerStyles(lat, lon);
+			else fetchNearbyData(lat, lon);
+		} catch {
+			setLocStatus("denied");
+		}
+	}
+
+	function dismissDeniedBanner() {
+		sessionStorage.setItem("artscape.locDeniedDismissed", "1");
+		setDeniedBannerDismissed(true);
+	}
+
+	function clearMarkers() {
 		markersRef.current.forEach((m) => m.remove());
 		markersRef.current = [];
 	}
 
-	async function loadArtworks(lat, lon) {
-		try {
-			const [nearbyRes, allRes] = await Promise.all([
-				fetch(`/api/artworks/nearby?lat=${lat}&lon=${lon}`),
-				fetch("/api/artworks"),
-			]);
-			const nearbyData = await nearbyRes.json();
-			const allData = await allRes.json();
-			setAllArtworks(allData);
+	// Creates all markers immediately using the cached artworks prop.
+	// showAllDetailed: full style + detailed sheet (guests and denied-location auth users).
+	// Otherwise: muted style + succinct sheet — nearby upgrade happens in resolveMarkerStyles.
+	function loadAllMarkers(artworksData) {
+		clearMarkers();
+		markerElsRef.current.clear();
 
-			// Compute distances for NearestArtworksPanel (auth only)
+		const showAllDetailed = isGuest || locationStatusRef.current === "denied";
+
+		if (showAllDetailed) {
+			artworksData.forEach((art) => {
+				const el = createNearbyMarkerEl();
+				el.onclick = () => {
+					if (navigationStateRef.current) return;
+					setSheetContent({ art, type: "detailed" });
+				};
+				const marker = new mapboxgl.Marker(el)
+					.setLngLat([art.lon, art.lat])
+					.addTo(map.current);
+				markersRef.current.push(marker);
+				markerElsRef.current.set(art.objectid, { el, art });
+			});
+		} else {
+			artworksData.forEach((art) => {
+				const el = createAllMarkerEl();
+				// Muted state applied as inline styles — does not touch class-based marker design
+				el.style.opacity = "0.45";
+				el.style.filter = "grayscale(80%)";
+				el.style.transition = "opacity 0.4s ease, filter 0.4s ease";
+				el.onclick = () => {
+					if (navigationStateRef.current) return;
+					setSheetContent({ art, type: "succinct" });
+				};
+				const marker = new mapboxgl.Marker(el)
+					.setLngLat([art.lon, art.lat])
+					.addTo(map.current);
+				markersRef.current.push(marker);
+				markerElsRef.current.set(art.objectid, { el, art });
+			});
+		}
+	}
+
+	// Guest path: populates nearbyArtworks without touching marker DOM.
+	async function fetchNearbyData(lat, lon) {
+		if (nearbyFetchedRef.current) return;
+		nearbyFetchedRef.current = true;
+		try {
+			const res = await fetch(`/api/artworks/nearby?lat=${lat}&lon=${lon}`);
+			const nearbyData = await res.json();
+			const nearbyWithDist = nearbyData.map((a) => ({
+				...a,
+				distance: Math.round(haversineMeters(lat, lon, a.lat, a.lon)),
+			}));
+			setNearbyArtworks(nearbyWithDist.slice(0, 3));
+		} catch (e) {
+			console.error("Could not fetch nearby artworks", e);
+			nearbyFetchedRef.current = false;
+		}
+	}
+
+	// Fetches /api/artworks/nearby, then mutates existing marker DOM elements in-place.
+	// Nearby: upgrade to marker-nearby class, remove muted styles, pop-in transform, detailed sheet.
+	// Far: opacity 0.7, clear grayscale.
+	async function resolveMarkerStyles(lat, lon) {
+		if (stylesResolvedRef.current) return;
+		// If markers haven't been created yet (geo beat artworks), bail out —
+		// the artworks useEffect will call us again once markers exist.
+		if (!markerElsRef.current.size) return;
+		stylesResolvedRef.current = true;
+		try {
+			const res = await fetch(`/api/artworks/nearby?lat=${lat}&lon=${lon}`);
+			const nearbyData = await res.json();
+
 			const nearbyWithDist = nearbyData.map((a) => ({
 				...a,
 				distance: Math.round(haversineMeters(lat, lon, a.lat, a.lon)),
@@ -168,54 +387,228 @@ function clearMarkers() {
 			setNearbyArtworks(nearbyWithDist.slice(0, 3));
 
 			const nearbyIds = new Set(nearbyData.map((a) => a.objectid));
-			clearMarkers();
 
-			if (isGuest) {
-				// Guest: every artwork uses nearby-style marker, every click opens detailed sheet
-				allData.forEach((art) => {
-					const el = createNearbyMarkerEl();
-					const marker = new mapboxgl.Marker(el)
-						.setLngLat([art.lon, art.lat])
-						.addTo(map.current);
-					el.addEventListener("click", () =>
-						setSheetContent({ art, type: "detailed" }),
-					);
-					markersRef.current.push(marker);
-				});
-			} else {
-				// Auth: all markers use BottomSheet
-				allData.forEach((art) => {
-					if (nearbyIds.has(art.objectid)) return;
-
-					const el = createAllMarkerEl();
-					const marker = new mapboxgl.Marker(el)
-						.setLngLat([art.lon, art.lat])
-						.addTo(map.current);
-					el.addEventListener("click", () =>
-						setSheetContent({ art, type: "succinct" }),
-					);
-					markersRef.current.push(marker);
-				});
-
-				nearbyData.forEach((art) => {
-					const el = createNearbyMarkerEl();
-					const marker = new mapboxgl.Marker(el)
-						.setLngLat([art.lon, art.lat])
-						.addTo(map.current);
-					el.addEventListener("click", (e) => {
+			markerElsRef.current.forEach(({ el, art }, objectid) => {
+				if (nearbyIds.has(objectid)) {
+					// Upgrade to nearby style — classList ops preserve any classes
+					// Mapbox has added (e.g. mapboxgl-marker, anchor class)
+					el.classList.remove("marker-all");
+					el.classList.add("marker-nearby");
+					// Remove muted inline styles
+					el.style.opacity = "";
+					el.style.filter = "";
+					// Pop-in via keyframe animation on the inner visual element —
+					// keeps Mapbox's transform: translate3d() on the root untouched
+					const inner = el.querySelector(".marker-inner");
+					if (inner) {
+						inner.classList.add("marker-popin");
+						inner.addEventListener(
+							"animationend",
+							() => inner.classList.remove("marker-popin"),
+							{ once: true },
+						);
+					}
+					// Reassign click handler to detailed sheet
+					el.onclick = (e) => {
+						if (navigationStateRef.current) return;
 						e.stopPropagation();
 						setSheetContent({ art, type: "detailed" });
-					});
-					markersRef.current.push(marker);
+					};
+				} else {
+					el.style.opacity = "0.7";
+					el.style.filter = "";
+				}
+			});
+
+		} catch (e) {
+			console.error("Could not resolve marker styles", e);
+			// Allow a retry on error
+			stylesResolvedRef.current = false;
+		}
+	}
+
+	async function fetchRoute(art) {
+		if (!lastPosRef.current) return;
+
+		preNavCameraRef.current = {
+			center: map.current.getCenter(),
+			zoom: map.current.getZoom(),
+			pitch: map.current.getPitch(),
+			bearing: map.current.getBearing(),
+		};
+
+		const origin = `${lastPosRef.current.lon},${lastPosRef.current.lat}`;
+		const destination = `${art.lon},${art.lat}`;
+		const token = import.meta.env.VITE_MAPBOX_TOKEN;
+		const url = `https://api.mapbox.com/directions/v5/mapbox/walking/${origin};${destination}?steps=true&geometries=geojson&overview=full&access_token=${token}`;
+
+		let routeData;
+		try {
+			const res = await fetch(url);
+			const json = await res.json();
+			if (!json.routes || json.routes.length === 0) {
+				console.warn("No route found");
+				return;
+			}
+			routeData = json.routes[0];
+		} catch (err) {
+			console.error("Directions API error:", err);
+			return;
+		}
+
+		const coords = routeData.geometry.coordinates;
+		const steps = routeData.legs[0].steps.map((s) => ({
+			instruction: s.maneuver.instruction,
+			distance: s.distance,
+		}));
+
+		map.current.getSource("route").setData({
+			type: "Feature",
+			geometry: routeData.geometry,
+		});
+		map.current.getSource("route-traveled").setData({
+			type: "Feature",
+			geometry: { type: "LineString", coordinates: [] },
+		});
+
+		const lons = coords.map((c) => c[0]);
+		const lats = coords.map((c) => c[1]);
+		map.current.fitBounds(
+			[
+				[Math.min(...lons), Math.min(...lats)],
+				[Math.max(...lons), Math.max(...lats)],
+			],
+			{ padding: { top: 80, bottom: 280, left: 40, right: 40 }, duration: 800 },
+		);
+
+		setNavigationState({
+			mode: "preview",
+			route: coords,
+			steps,
+			destination: { lat: art.lat, lng: art.lon, title: art.title, objectid: art.objectid },
+			totalDistance: routeData.distance,
+			totalDuration: routeData.duration,
+			watchId: null,
+		});
+	}
+
+	function beginNavigation() {
+		setNavigationState((prev) => {
+			if (!prev || prev.mode !== "preview") return prev;
+
+			const watchId = navigator.geolocation.watchPosition(
+				(position) => onPositionUpdate(position, prev.route, prev.destination),
+				(err) => console.warn("watchPosition error:", err),
+				{ enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 },
+			);
+
+			return {
+				...prev,
+				mode: "navigating",
+				distanceRemaining: prev.totalDistance,
+				watchId,
+			};
+		});
+
+		// flyTo is outside the setter — safe from double-invocation in strict mode
+		const current = navigationStateRef.current;
+		if (current && map.current && lastPosRef.current) {
+			map.current.flyTo({
+				center: [lastPosRef.current.lon, lastPosRef.current.lat],
+				zoom: 17,
+				pitch: 60,
+				bearing: getBearing(
+					lastPosRef.current.lat, lastPosRef.current.lon,
+					current.destination.lat, current.destination.lng,
+				),
+				duration: 1000,
+				essential: true,
+			});
+		}
+	}
+
+	function onPositionUpdate(position, routeCoords, destination) {
+		const { latitude, longitude, accuracy } = position.coords;
+
+		const distanceRemaining = haversineMeters(
+			latitude,
+			longitude,
+			destination.lat,
+			destination.lng,
+		);
+
+		if (accuracy <= 30 && map.current) {
+			let closestIdx = 0;
+			let minDist = Infinity;
+			routeCoords.forEach(([cLon, cLat], idx) => {
+				const d = haversineMeters(latitude, longitude, cLat, cLon);
+				if (d < minDist) {
+					minDist = d;
+					closestIdx = idx;
+				}
+			});
+
+			const traveled = routeCoords.slice(0, closestIdx + 1);
+			if (traveled.length >= 2) {
+				map.current.getSource("route-traveled").setData({
+					type: "Feature",
+					geometry: { type: "LineString", coordinates: traveled },
 				});
 			}
-		} catch (e) {
-			console.error("Could not load map data", e);
+		}
+
+		if (accuracy <= 30 && map.current && !userInteractingRef.current) {
+			map.current.easeTo({
+				center: [longitude, latitude],
+				bearing: getBearing(latitude, longitude, destination.lat, destination.lng),
+				pitch: 60,
+				duration: 1000,
+				essential: false,
+			});
+		}
+
+		setNavigationState((prev) => {
+			if (!prev || prev.mode !== "navigating") return prev;
+			if (distanceRemaining < 15) {
+				return { ...prev, distanceRemaining: 0, arrived: true };
+			}
+			return { ...prev, distanceRemaining };
+		});
+	}
+
+	function endNavigation() {
+		userInteractingRef.current = false;
+		setShowRecenter(false);
+
+		setNavigationState((prev) => {
+			if (prev?.watchId) navigator.geolocation.clearWatch(prev.watchId);
+			return null;
+		});
+
+		if (map.current) {
+			map.current.getSource("route").setData({
+				type: "Feature",
+				geometry: { type: "LineString", coordinates: [] },
+			});
+			map.current.getSource("route-traveled").setData({
+				type: "Feature",
+				geometry: { type: "LineString", coordinates: [] },
+			});
+			if (preNavCameraRef.current) {
+				map.current.flyTo({
+					center: preNavCameraRef.current.center,
+					zoom: preNavCameraRef.current.zoom,
+					pitch: preNavCameraRef.current.pitch ?? 0,
+					bearing: preNavCameraRef.current.bearing ?? 0,
+					duration: 800,
+				});
+			}
 		}
 	}
 
 	useEffect(() => {
-		if (map.current) return;
+		if (mapInitialized.current) return;
+		mapInitialized.current = true;
 
 		map.current = new mapboxgl.Map({
 			container: mapContainer.current,
@@ -225,36 +618,114 @@ function clearMarkers() {
 		});
 
 		map.current.on("load", () => {
-			navigator.geolocation.getCurrentPosition(
-				(pos) => {
-					map.current.setCenter([
-						pos.coords.longitude,
-						pos.coords.latitude,
-					]);
-					loadArtworks(pos.coords.latitude, pos.coords.longitude);
-				},
-				() => loadArtworks(40.343, -74.6514),
-			);
+			map.current.addSource("route", {
+				type: "geojson",
+				data: { type: "Feature", geometry: { type: "LineString", coordinates: [] } },
+			});
+			map.current.addSource("route-traveled", {
+				type: "geojson",
+				data: { type: "Feature", geometry: { type: "LineString", coordinates: [] } },
+			});
+			map.current.addLayer({
+				id: "route-line",
+				type: "line",
+				source: "route",
+				layout: { "line-join": "round", "line-cap": "round" },
+				paint: { "line-color": "#E8450A", "line-width": 5, "line-opacity": 0.85 },
+			});
+			map.current.addLayer({
+				id: "route-line-traveled",
+				type: "line",
+				source: "route-traveled",
+				layout: { "line-join": "round", "line-cap": "round" },
+				paint: { "line-color": "#999999", "line-width": 5, "line-opacity": 0.5 },
+			});
 
-			navigator.geolocation.watchPosition(
-				(pos) => {
+			// Load markers now if artworks already arrived; otherwise the artworks
+			// useEffect will call loadAllMarkers once they come in.
+			if (artworksRef.current.length > 0 && !markersLoadedRef.current) {
+				markersLoadedRef.current = true;
+				loadAllMarkers(artworksRef.current);
+			}
+
+			// Silently get location when permission is already granted (no prompt needed).
+			// Only used from the pre-check path — not exposed to JSX.
+			const doSilentGet = async () => {
+				try {
+					const pos = await fetchGeoPosition();
 					const { latitude: lat, longitude: lon } = pos.coords;
+					geoPositionRef.current = { lat, lon };
 					lastPosRef.current = { lat, lon };
-					if (!userMarkerRef.current) {
-						const el = createUserMarkerEl();
-						userMarkerRef.current = new mapboxgl.Marker(el)
-							.setLngLat([lon, lat])
-							.addTo(map.current);
-						map.current.flyTo({ center: [lon, lat], zoom: 14 });
-					} else {
-						userMarkerRef.current.setLngLat([lon, lat]);
-					}
-				},
-				(err) => console.error(err),
-				{ enableHighAccuracy: true, maximumAge: 10000 },
-			);
+					if (map.current) map.current.setCenter([lon, lat]);
+					locationStatusRef.current = "granted";
+					setLocationStatus("granted");
+					if (!isGuest) resolveMarkerStyles(lat, lon);
+					else fetchNearbyData(lat, lon);
+				} catch {
+					locationStatusRef.current = "denied";
+					setLocationStatus("denied");
+				}
+			};
+
+			// Permission pre-check: skip the prompt banner if permission is already known.
+			// navigator.permissions is unavailable on older iOS Safari — wrap in try/catch.
+			try {
+				navigator.permissions
+					.query({ name: "geolocation" })
+					.then((result) => {
+						if (result.state === "granted") {
+							doSilentGet();
+						} else if (result.state === "denied") {
+							locationStatusRef.current = "denied";
+							setLocationStatus("denied");
+						}
+						// result.state === 'prompt' → leave as 'pending', banner will show
+					})
+					.catch(() => {
+						// permissions.query returned a rejected promise — leave as pending
+					});
+			} catch {
+				// navigator.permissions not available (old iOS Safari) — leave as pending
+			}
+
+			const interactionStart = () => {
+				userInteractingRef.current = true;
+				setShowRecenter(true);
+			};
+			map.current.on("dragstart", interactionStart);
+			map.current.on("pitchstart", interactionStart);
+			map.current.on("rotatestart", interactionStart);
 		});
 	}, []);
+
+	useEffect(() => {
+		return () => {
+			if (navigationState?.watchId) {
+				navigator.geolocation.clearWatch(navigationState.watchId);
+			}
+		};
+	}, [navigationState?.watchId]);
+
+	function handleRecenter() {
+		userInteractingRef.current = false;
+		setShowRecenter(false);
+		if (lastPosRef.current && navigationState && map.current) {
+			map.current.flyTo({
+				center: [lastPosRef.current.lon, lastPosRef.current.lat],
+				bearing: getBearing(
+					lastPosRef.current.lat, lastPosRef.current.lon,
+					navigationState.destination.lat, navigationState.destination.lng,
+				),
+				pitch: 60,
+				zoom: 17,
+				duration: 600,
+				essential: true,
+			});
+		}
+	}
+
+	const panelVisible = !panelMinimized && !sheetContent && !navigationState;
+	const pillVisible = panelMinimized && !sheetContent && !navigationState;
 
 	return (
 		<>
@@ -265,29 +736,109 @@ function clearMarkers() {
 			<ScavengerSidebar
 				open={sidebarOpen}
 				onClose={() => setSidebarOpen(false)}
-				artworks={allArtworks}
+				artworks={artworks}
 				foundIds={foundIds}
 			/>
-			{!isGuest && (
-				<NearestArtworksPanel
-					artworks={nearbyArtworks}
-					onSelect={(art) => setSheetContent({ art, type: "detailed" })}
-					hidden={!!sheetContent}
-				/>
+			<NearestArtworksPanel
+				artworks={nearbyArtworks}
+				onSelect={(art) => setSheetContent({ art, type: "detailed" })}
+				hidden={!panelVisible}
+				onMinimize={() => setPanelMinimized(true)}
+			/>
+			{pillVisible && (
+				<button
+					className={`restore-pill${isGuest ? " restore-pill--guest" : ""}`}
+					onClick={() => setPanelMinimized(false)}
+					aria-label="Show nearest artworks"
+				>
+					↑ Artworks
+				</button>
 			)}
+
+			{/* Location prompt banner — shown while we're waiting for user to enable location */}
+			{!isGuest && (locationStatus === "pending" || locationStatus === "loading") && (
+				<div className="loc-banner loc-banner-prompt">
+					<span className="loc-banner-text">
+						📍 Find the 3 artworks closest to you →
+					</span>
+					<button
+						className="loc-banner-btn"
+						onClick={enableLocation}
+						disabled={locationStatus === "loading"}
+					>
+						{locationStatus === "loading" ? "Locating…" : "Enable Location"}
+					</button>
+				</div>
+			)}
+
+			{/* Location denied banner — dismissable for the session */}
+			{!isGuest && locationStatus === "denied" && !deniedBannerDismissed && (
+				<div className="loc-banner loc-banner-denied">
+					<span className="loc-banner-text">
+						📍 Location off · Showing all artworks ·{" "}
+						<button
+							className="loc-banner-link"
+							onClick={() => setShowDeniedTooltip((v) => !v)}
+						>
+							How to enable ↗
+						</button>
+					</span>
+					<button
+						className="loc-banner-dismiss"
+						onClick={dismissDeniedBanner}
+						aria-label="Dismiss"
+					>
+						✕
+					</button>
+					{showDeniedTooltip && (
+						<div className="loc-denied-tooltip">
+							<strong>Safari (iOS):</strong> Settings → Privacy &amp; Security → Location Services → Safari → Allow
+							<br />
+							<strong>Chrome (Android):</strong> Settings → Site Settings → Location → Allow
+						</div>
+					)}
+				</div>
+			)}
+
 			<BottomSheet
 				key={sheetContent?.art?.objectid}
 				content={sheetContent}
 				onClose={() => setSheetContent(null)}
 				onVerify={verifyArtwork}
+				onFetchRoute={fetchRoute}
+				navigationMode={!!navigationState}
 				isFound={
 					sheetContent?.art
 						? foundIds.has(sheetContent.art.objectid)
 						: false
 				}
+				isFavorited={
+					sheetContent?.art
+						? favoritedIds.has(sheetContent.art.objectid)
+						: false
+				}
 				isGuest={isGuest}
 				user={user}
+				favoritesLoading={favoritesLoading}
+				locationStatus={locationStatus}
 			/>
+			{navigationState && (
+				<DirectionsPanel
+					navigationState={navigationState}
+					onBeginNavigation={beginNavigation}
+					onEndNavigation={endNavigation}
+					isGuest={isGuest}
+				/>
+			)}
+			{navigationState?.mode === "navigating" && (
+				<button
+					className={`recenter-btn${showRecenter ? " recenter-btn--visible" : " recenter-btn--hidden"}${isGuest ? " recenter-btn--guest" : ""}`}
+					onClick={handleRecenter}
+					aria-label="Re-center map"
+				>
+					⊙
+				</button>
+			)}
 		</>
 	);
 }

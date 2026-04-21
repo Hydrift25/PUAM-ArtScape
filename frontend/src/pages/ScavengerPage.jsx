@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
+import { io } from "socket.io-client";
 import mapboxgl from "mapbox-gl";
 
 export default function ScavengerPage({ artworks = [] }) {
@@ -59,6 +60,24 @@ export default function ScavengerPage({ artworks = [] }) {
 	useEffect(() => {
 		refreshFindsAndStats();
 	}, [refreshFindsAndStats]);
+
+	function AutoUpdateHuntPage() {
+		useEffect(() => {
+			const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:42560';
+
+			const socket = io(SOCKET_URL, {
+				auth: { user_id: user.id }
+			});
+
+			socket.on("image_processed", async (data) => {
+				console.log("Image processed:", data.objectid);
+
+				await refreshFindsAndStats();
+			});
+
+			return () => socket.disconnect();
+		});
+	}
 
 	// Attach stream to video element once camera modal is open
 	useEffect(() => {
@@ -133,7 +152,7 @@ export default function ScavengerPage({ artworks = [] }) {
 				credentials: "include",
 				body: JSON.stringify({ currObjectId, userImageUrl }),
 			});
-			// TODO: await refreshFindsAndStats();
+			await refreshFindsAndStats();
 		} catch (err) {
 			console.error("Failed to mark found:", err);
 		}
@@ -229,6 +248,7 @@ export default function ScavengerPage({ artworks = [] }) {
 				<p className="page-subtitle">
 					Capture all {total} artworks to complete the hunt
 				</p>
+				<AutoUpdateHuntPage />
 			</div>
 
 			{/* Progress + stats card */}

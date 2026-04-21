@@ -209,12 +209,18 @@ def update_visited_artwork(user_id, objectid):
             cur.execute(query, (user_id, objectid))
             conn.commit()
 
-
+# Inserts base find record for a (user_id, objectid) combo.
+# If there is already a record, this means that verification was
+# not sucessful, so update the photo URL to reflect the new
+# verification attempt.
 def record_find(user_id, objectid, user_photo_url):
     query = """
         INSERT INTO scavenger_hunt_finds (user_id, objectid, photo_url, verified)
         VALUES (%s, %s, %s, FALSE)
-        ON CONFLICT (user_id, objectid) DO NOTHING;
+        ON CONFLICT (user_id, objectid)
+        DO UPDATE SET
+        photo_url = EXCLUDED.photo_url,
+        verified = EXCLUDED.verified;
     """
     with contextlib.closing(psycopg.connect(db_url)) as conn:
         with contextlib.closing(conn.cursor()) as cur:

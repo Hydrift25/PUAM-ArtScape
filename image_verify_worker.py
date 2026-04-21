@@ -7,6 +7,7 @@ from io import BytesIO
 import requests
 from app.database import db
 import time
+from flask_socketio import SocketIO
 
 print("QUEUE ID (Worker):", id(image_verify_queue))
 
@@ -53,14 +54,22 @@ def process_verify_job(verify_job, model, preprocess):
     else:
         # need some logic to tell that image was not verified
         print(f"NOOOO: {verify_job[0]} {verify_job[1]} {verify_job[2]} BAD", flush=True)
-        pass
+        # TODO: Add special logic for location based fail, or image based
 
-def worker_loop():
+def worker_loop(socketio):
     model, preprocess = load_model()
 
     while True:
         print(f"Hello {id(image_verify_queue)}")
         verify_job = image_verify_queue.get() # user_id, objectid, photo_url
         print(f"Got verify job: {verify_job[0]} {verify_job[1]} {verify_job[2]}", flush=True)
+
         process_verify_job(verify_job, model, preprocess)
-        time.sleep(0.1)
+
+        user_id, objectid, _ = verify_job
+
+        socketio.emit(
+            'image_processed',
+            {'objectid': objectid},
+            room=f"user_{user_id}"
+        )

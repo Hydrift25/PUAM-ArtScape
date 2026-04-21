@@ -1,7 +1,12 @@
 import torch
-import clip
+import torch.nn.functional as F
+from torchvision import transforms
 from PIL import Image
 import sys
+
+# Load DINOv2 model from torch hub
+model = torch.hub.load('facebookresearch/dinov2', 'dinov2_vits14')
+model.eval()
 
 if torch.cuda.is_available():
     device = torch.device("cuda") # NVIDA GPU
@@ -9,20 +14,32 @@ elif torch.backends.mps.is_available():
     device = torch.device("mps") # Apple Silicon GPU
 else:
     device = torch.device("cpu") # If neither, use CPU
+model.to(device)
 
-# Load pre-trained model
-model, preprocess = clip.load("ViT-B/32", device=device)
+# Preprocessing (important!)
+transform = transforms.Compose([
+    transforms.Resize(256),
+    transforms.CenterCrop(224),
+    transforms.ToTensor(),
+    transforms.Normalize(
+        mean=[0.485, 0.456, 0.406],
+        std=[0.229, 0.224, 0.225]
+    )
+])
 
-# Generate image embedding from image file
 def get_embedding(image_path):
-    image = preprocess(Image.open(image_path)).unsqueeze(0).to(device)
-    with torch.no_grad():
-        embedding = model.encode_image(image)
-    return embedding / embedding.norm(dim=-1, keepdim=True)
+    image = Image.open(image_path).convert("RGB")
+    image = transform(image).unsqueeze(0).to(device)
 
-# Simple cosine similarity of two image embeddings
+    with torch.no_grad():
+        embedding = model(image)  # shape: (1, dim)
+
+    # Normalize for cosine similarity
+    embedding = F.normalize(embedding, dim=1)
+    return embedding
+
 def cosine_similarity(a, b):
-    return (a @ b.T).item()
+    return torch.sum(a * b).item()
 
 # Compare the reference and user uploaded images using cosine similarity
 try:
@@ -43,9 +60,5 @@ except Exception as e:
     print(f"An unexpected error occurred for user image: {e}")
     sys.exit()
 
-
 sim = cosine_similarity(ref, user)
-
-print(f"Reference image filepath: {sys.argv[1]}")
-print(f"User uploaded image filepath: {sys.argv[2]}")
-print(f"Similarity: {sim}")
+print("Similarity:", sim)

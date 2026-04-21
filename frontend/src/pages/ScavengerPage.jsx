@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
+import mapboxgl from "mapbox-gl";
 
 export default function ScavengerPage() {
 	const { user, login } = useAuth();
@@ -10,7 +11,38 @@ export default function ScavengerPage() {
 	const [cameraOpen, setCameraOpen] = useState(false);
 	const [stream, setStream] = useState(null);
 	const [capturedImage, setCapturedImage] = useState(null);
+	const [currObjectId, setCurrObjectId] = useState(null);
 	const videoRef = useRef(null);
+	const VERIFY_RADIUS_M = 200;
+
+	function haversineMeters(lat1, lon1, lat2, lon2) {
+		const R = 6371000;
+		const toRad = (d) => (d * Math.PI) / 180;
+		const dLat = toRad(lat2 - lat1);
+		const dLon = toRad(lon2 - lon1);
+		const a =
+			Math.sin(dLat / 2) ** 2 +
+			Math.cos(toRad(lat1)) *
+			Math.cos(toRad(lat2)) *
+			Math.sin(dLon / 2) ** 2;
+		return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+	}
+
+	function getCurrentPosition() {
+		return new Promise((resolve, reject) => {
+			if (!navigator.geolocation) {
+				reject(new Error("Geolocation not supported"));
+				return;
+			}
+			navigator.geolocation.getCurrentPosition(resolve, reject, {
+				enableHighAccuracy: true,
+				maximumAge: 60000,
+				timeout: 20000,
+			});
+		});
+	}
+
+	mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN;
 
 	useEffect(() => {
 		fetch("/api/artworks")
@@ -77,6 +109,24 @@ export default function ScavengerPage() {
 		setStream(null);
 	}
 
+	async function uploadPhoto() {
+		if (!capturedImage) return;
+
+		const blob = await fetch(capturedImage).then(res => res.blob());
+
+		const formData = new FormData();
+		formData.append("image", blob, "photo.jpg");
+
+		const response = await fetch("/api/upload", {
+			method: "POST",
+			body: formData,
+		});
+
+		const data = await response.json();
+
+		handleVerifyUserSubmission(data.image_url);
+	}
+
 	function closeCamera() {
 		if (stream) stream.getTracks().forEach((t) => t.stop());
 		setStream(null);
@@ -84,27 +134,25 @@ export default function ScavengerPage() {
 		setCameraOpen(false);
 	}
 
-	async function handleMarkFound(objectid) {
-		if (marking.has(objectid)) return;
-		setMarking((prev) => new Set(prev).add(objectid));
+	async function handleVerifyUserSubmission(userImageUrl) {
+		if (marking.has(currObjectId)) return;
+		setMarking((prev) => new Set(prev).add(currObjectId));
 		try {
+
+
 			await fetch("/api/scavenger/find", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				credentials: "include",
-				body: JSON.stringify({ objectid }),
+				body: JSON.stringify({ currObjectId, userImageUrl }),
 			});
-			await fetch(`/api/scavenger/verify/${objectid}`, {
-				method: "POST",
-				credentials: "include",
-			});
-			await refreshFindsAndStats();
+			// await refreshFindsAndStats();
 		} catch (err) {
 			console.error("Failed to mark found:", err);
 		} finally {
 			setMarking((prev) => {
 				const next = new Set(prev);
-				next.delete(objectid);
+				next.delete(currObjectId);
 				return next;
 			});
 		}
@@ -167,7 +215,10 @@ export default function ScavengerPage() {
 									</button>
 									<button
 										className="camera-confirm-btn"
-										onClick={closeCamera}
+										onClick={() => {
+											uploadPhoto();
+											closeCamera();
+										}}
 									>
 										Confirm
 									</button>
@@ -268,14 +319,18 @@ export default function ScavengerPage() {
 								</span>
 							</div>
 							<div className="scav-card-actions">
-								<button
+								{!found && (<button
 									className="scav-camera-btn"
-									onClick={openCamera}
+									onClick={() => {
+										setCurrObjectId(art.objectid);
+										openCamera();
+									}}
 									aria-label="Open camera"
 								>
 									📷
 								</button>
-								{!found && (
+								)}
+								{/* {!found && (
 									<button
 										className="scav-mark-found-btn"
 										onClick={() => handleMarkFound(art.objectid)}
@@ -283,7 +338,7 @@ export default function ScavengerPage() {
 									>
 										{isBusy ? "…" : "Found"}
 									</button>
-								)}
+								)} */}
 							</div>
 						</div>
 					);

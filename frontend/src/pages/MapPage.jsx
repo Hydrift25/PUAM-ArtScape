@@ -218,6 +218,29 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 		localStorage.setItem(FOUND_STORAGE_KEY, JSON.stringify([...foundIds]));
 	}, [foundIds]);
 
+	async function toggleFavorite(objectid) {
+		try {
+			const res = await fetch("/api/artworks/favorite", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				credentials: "include",
+				body: JSON.stringify({ objectid }),
+			});
+			if (res.ok) {
+				const data = await res.json();
+				setFavoritedIds((prev) => {
+					const next = new Set(prev);
+					if (data.favorited) next.add(objectid);
+					else next.delete(objectid);
+					return next;
+				});
+			}
+		} catch (err) {
+			console.error("Failed to update favorite:", err);
+			alert("Something went wrong. Please try again.");
+		}
+	}
+
 	async function markFound(objectid) {
 		if (!user) return;
 		try {
@@ -806,6 +829,7 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 				onClose={() => setSheetContent(null)}
 				onVerify={verifyArtwork}
 				onFetchRoute={fetchRoute}
+				onToggleFavorite={toggleFavorite}
 				navigationMode={!!navigationState}
 				isFound={
 					sheetContent?.art

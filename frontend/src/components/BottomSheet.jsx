@@ -5,6 +5,7 @@ export default function BottomSheet({
 	onClose,
 	onVerify,
 	onFetchRoute,
+	onToggleFavorite,
 	navigationMode = false,
 	isFound,
 	isGuest,
@@ -13,12 +14,6 @@ export default function BottomSheet({
 	locationStatus = "granted",
 }) {
 	const [visible, setVisible] = useState(false);
-	const [favorited, setFavorited] = useState(isFavorited);
-
-	// Sync if the sheet is open while favoritesLoading resolves
-	useEffect(() => {
-		setFavorited(isFavorited);
-	}, [isFavorited]);
 	const sheetRef = useRef(null);
 	const touchStartY = useRef(null);
 	const touchCurrentY = useRef(null);
@@ -88,24 +83,6 @@ export default function BottomSheet({
 				</div>
 			</div>
 		);
-	}
-
-	async function toggleFavorite() {
-		try {
-			const res = await fetch("/api/artworks/favorite", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				credentials: "include",
-				body: JSON.stringify({ objectid: art.objectid }),
-			});
-			if (res.ok) {
-				const data = await res.json();
-				setFavorited(data.favorited);
-			}
-		} catch (err) {
-			console.error("Failed to update favorite:", err);
-			alert("Something went wrong. Please try again.");
-		}
 	}
 
 	return (
@@ -253,13 +230,13 @@ export default function BottomSheet({
 							/>
 						)}
 						<button
-							className={`bs-fav-overlay-btn${favorited ? " favorited" : ""}`}
-							onClick={toggleFavorite}
-							aria-label={favorited ? "Unfavorite" : "Favorite"}
+							className={`bs-fav-overlay-btn${isFavorited ? " favorited" : ""}`}
+							onClick={() => onToggleFavorite(art.objectid)}
+							aria-label={isFavorited ? "Unfavorite" : "Favorite"}
 							disabled={favoritesLoading}
 							style={favoritesLoading ? { opacity: 0.5 } : undefined}
 						>
-							{favorited ? "❤️" : "🤍"}
+							{isFavorited ? "❤️" : "🤍"}
 						</button>
 					</div>
 
@@ -330,12 +307,12 @@ export default function BottomSheet({
 							</p>
 						)}
 						<button
-							className={`bs-action-btn${favorited ? " bs-action-unfav" : " bs-action-fav"}`}
-							onClick={toggleFavorite}
+							className={`bs-action-btn${isFavorited ? " bs-action-unfav" : " bs-action-fav"}`}
+							onClick={() => onToggleFavorite(art.objectid)}
 							disabled={favoritesLoading}
 							style={favoritesLoading ? { opacity: 0.5 } : undefined}
 						>
-							{favorited ? "💔 Unfavorite" : "❤️ Save to Favorites"}
+							{isFavorited ? "💔 Unfavorite" : "❤️ Save to Favorites"}
 						</button>
 					</div>
 				</div>

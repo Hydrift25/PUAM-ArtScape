@@ -215,12 +215,13 @@ def update_visited_artwork(user_id, objectid):
 # verification attempt.
 def record_find(user_id, objectid, user_photo_url):
     query = """
-        INSERT INTO scavenger_hunt_finds (user_id, objectid, photo_url, verified)
-        VALUES (%s, %s, %s, FALSE)
+        INSERT INTO scavenger_hunt_finds (user_id, objectid, photo_url, verified, verify_state)
+        VALUES (%s, %s, %s, FALSE, 0)
         ON CONFLICT (user_id, objectid)
         DO UPDATE SET
         photo_url = EXCLUDED.photo_url,
-        verified = EXCLUDED.verified;
+        verified = EXCLUDED.verified,
+        verify_state = EXCLUDED.verify_state;
     """
     with contextlib.closing(psycopg.connect(db_url)) as conn:
         with contextlib.closing(conn.cursor()) as cur:
@@ -228,15 +229,25 @@ def record_find(user_id, objectid, user_photo_url):
             conn.commit()
 
 
-def verify_find(user_id, objectid):
-    query = """
-        UPDATE scavenger_hunt_finds
-        SET verified = TRUE
-        WHERE user_id = %s AND objectid = %s;
-    """
+def update_verify_state(user_id, objectid, verify_state):
+    # TODO: Clean this up once we stop using verified
+    if verify_state == 1:
+        query = """
+            UPDATE scavenger_hunt_finds
+            SET verified = TRUE,
+            verify_state = %s
+            WHERE user_id = %s AND objectid = %s;
+        """
+    else:
+       query = """
+            UPDATE scavenger_hunt_finds
+            SET verified = FALSE,
+            verify_state = %s
+            WHERE user_id = %s AND objectid = %s;
+        """
     with contextlib.closing(psycopg.connect(db_url)) as conn:
         with contextlib.closing(conn.cursor()) as cur:
-            cur.execute(query, (user_id, objectid))
+            cur.execute(query, (verify_state, user_id, objectid))
             conn.commit()
 
 
@@ -245,6 +256,7 @@ def get_finds(user_id):
         SELECT
             s.objectid,
             s.verified,
+            s.verify_state,
             s.found_at,
             d.title,
             d.image_url
@@ -262,9 +274,10 @@ def get_finds(user_id):
         {
             "objectid": r[0],
             "verified": r[1],
-            "found_at": r[2].isoformat() if r[2] else None,
-            "title": r[3],
-            "image_url": r[4],
+            "verify_state": r[2],
+            "found_at": r[3].isoformat() if r[3] else None,
+            "title": r[4],
+            "image_url": r[5],
         }
         for r in rows
     ]

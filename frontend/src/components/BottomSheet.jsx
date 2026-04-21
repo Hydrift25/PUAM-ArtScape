@@ -1,17 +1,33 @@
 import { useState, useEffect, useRef } from "react";
 
+/*
+verifyState:
+0 = submitted, 1 = accepted,
+2 = failed due to location, 3 = failed due to image,
+4 = not submitted
+*/
+
+const VERIFY_LABELS = {
+	0: "Submitted for verification, in review",
+	1: "✅ Verified",
+	2: "📷 Take another Photo to Verify: please get closer to the artwork!",
+	3: "📷 Take another Photo to Verify: please take a clear picture of the artwork!",
+	4: "📷 Take Photo to Verify",
+};
+
 export default function BottomSheet({
 	content,
 	onClose,
 	onVerify,
 	onFetchRoute,
 	navigationMode = false,
-	isFound,
+	verifyState,
 	isGuest,
 	favoritesLoading = false,
 	isFavorited = false,
 	locationStatus = "granted",
 }) {
+	const isFound = verifyState == 1 ? true : false;
 	const [visible, setVisible] = useState(false);
 	const [favorited, setFavorited] = useState(isFavorited);
 
@@ -322,7 +338,7 @@ export default function BottomSheet({
 							disabled={isFound || favoritesLoading || locationStatus === "denied"}
 							style={favoritesLoading ? { opacity: 0.5 } : undefined}
 						>
-							{isFound ? "✅ Verified" : "📷 Take Photo to Verify"}
+							{VERIFY_LABELS[verifyState] ?? "Unknown"}
 						</button>
 						{!isFound && locationStatus === "denied" && (
 							<p className="bs-loc-denied-note">

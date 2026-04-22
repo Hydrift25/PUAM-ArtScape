@@ -134,14 +134,6 @@ def upload():
     result = cloudinary.uploader.upload(file)
     return flask.jsonify({"image_url": result["secure_url"]})
 
-@app.route("/api/scavenger/verify/<int:objectid>", methods=['POST'])
-def scavenger_verify(objectid):
-    user = session.get("user")
-    if not user:
-        return flask.jsonify({"error": "Not logged in"}), 401
-    db.verify_find(user["id"], objectid)
-    return flask.jsonify({"success": True})
-
 @app.route("/api/scavenger/finds", methods=['GET'])
 def scavenger_finds():
     user = session.get("user")

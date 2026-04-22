@@ -1,18 +1,21 @@
 import { useState, useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom";
+
+const VERIFY_STATE = { PENDING: 0, ACCEPTED: 1, FAILED_LOCATION: 2, FAILED_IMAGE: 3 };
 
 export default function BottomSheet({
 	content,
 	onClose,
-	onVerify,
 	onFetchRoute,
 	onToggleFavorite,
 	navigationMode = false,
-	isFound,
+	verifyState = null,
 	isGuest,
 	favoritesLoading = false,
 	isFavorited = false,
 	locationStatus = "granted",
 }) {
+	const navigate = useNavigate();
 	const [visible, setVisible] = useState(false);
 	const sheetRef = useRef(null);
 	const touchStartY = useRef(null);
@@ -306,22 +309,31 @@ export default function BottomSheet({
 
 					{/* Action buttons */}
 					<div className="bs-actions">
-						<button
-							className={`bs-action-btn bs-action-visit${isFound ? " bs-action-found" : ""}${!isFound && locationStatus !== "granted" ? " btn--location-disabled" : ""}`}
-							onClick={() =>
-								!isFound && locationStatus === "granted" && onVerify && onVerify(art)
-							}
-							disabled={isFound || favoritesLoading || locationStatus !== "granted"}
-							style={favoritesLoading ? { opacity: 0.5 } : undefined}
-							aria-label={!isFound && locationStatus !== "granted" ? "Enable location to verify this artwork" : undefined}
-						>
-							{isFound ? "✅ Verified" : "📷 Take Photo to Verify"}
-						</button>
-						{!isFound && locationStatus === "denied" && (
-							<p className="bs-loc-denied-note">
-								Enable location to confirm you&apos;re near this artwork before verifying.
-							</p>
-						)}
+						{(() => {
+							const isAccepted = verifyState === VERIFY_STATE.ACCEPTED;
+							const isPending  = verifyState === VERIFY_STATE.PENDING;
+							const label =
+								isAccepted ? "✓ Visited" :
+								isPending  ? "⏳ Verifying..." :
+								verifyState === VERIFY_STATE.FAILED_LOCATION ? "📍 Retry — too far" :
+								verifyState === VERIFY_STATE.FAILED_IMAGE    ? "📷 Retry — unclear photo" :
+								"📷 Verify Visit";
+							const btnClass = `bs-action-btn bs-action-visit${
+								isAccepted ? " bs-action-found" :
+								isPending  ? " bs-action-pending" :
+								(verifyState === VERIFY_STATE.FAILED_LOCATION || verifyState === VERIFY_STATE.FAILED_IMAGE) ? " bs-action-retry" :
+								""
+							}`;
+							return (
+								<button
+									className={btnClass}
+									onClick={() => !isAccepted && !isPending && navigate(`/hunt?objectid=${art.objectid}`)}
+									disabled={isAccepted || isPending}
+								>
+									{label}
+								</button>
+							);
+						})()}
 						<button
 							className={`bs-action-btn${isFavorited ? " bs-action-unfav" : " bs-action-fav"}`}
 							onClick={() => onToggleFavorite(art.objectid)}

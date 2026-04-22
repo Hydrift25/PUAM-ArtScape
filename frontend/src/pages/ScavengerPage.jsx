@@ -1,23 +1,65 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
+import { getSocket } from "../services/socket";
+import mapboxgl from "mapbox-gl";
 
-export default function ScavengerPage() {
+
+/*
+verify_state:
+0 = submitted, 1 = accepted,
+2 = failed due to location, 3 = failed due to image,
+4 = not submitted
+*/
+
+const VERIFY_LABELS = {
+	0: "Submitted for verification, in review",
+	1: "✓ Verified",
+	2: "Verification failed: please get closer to the artwork!",
+	3: "Verification failed: please take a clear picture of the artwork!",
+	4: "Not found",
+};
+
+export default function ScavengerPage({ artworks = [] }) {
 	const { user, login } = useAuth();
-	const [artworks, setArtworks] = useState([]);
 	const [finds, setFinds] = useState([]);
 	const [stats, setStats] = useState(null);
-	const [marking, setMarking] = useState(new Set());
 	const [cameraOpen, setCameraOpen] = useState(false);
 	const [stream, setStream] = useState(null);
 	const [capturedImage, setCapturedImage] = useState(null);
+	const [currObjectId, setCurrObjectId] = useState(null);
+	const [currLat, setCurrLat] = useState(null);
+	const [currLon, setCurrLon] = useState(null);
+	const lastPosRef = useRef(null);
 	const videoRef = useRef(null);
 
-	useEffect(() => {
-		fetch("/api/artworks")
-			.then((r) => r.json())
-			.then(setArtworks)
-			.catch(console.error);
-	}, []);
+	function haversineMeters(lat1, lon1, lat2, lon2) {
+		const R = 6371000;
+		const toRad = (d) => (d * Math.PI) / 180;
+		const dLat = toRad(lat2 - lat1);
+		const dLon = toRad(lon2 - lon1);
+		const a =
+			Math.sin(dLat / 2) ** 2 +
+			Math.cos(toRad(lat1)) *
+			Math.cos(toRad(lat2)) *
+			Math.sin(dLon / 2) ** 2;
+		return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+	}
+
+	function fetchGeoPosition() {
+		return new Promise((resolve, reject) => {
+			if (!navigator.geolocation) {
+				reject(new Error("Geolocation not supported"));
+				return;
+			}
+			navigator.geolocation.getCurrentPosition(resolve, reject, {
+				enableHighAccuracy: true,
+				maximumAge: 60000,
+				timeout: 20000,
+			});
+		});
+	}
+
+	mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN;
 
 	const refreshFindsAndStats = useCallback(async () => {
 		if (!user) return;
@@ -32,6 +74,22 @@ export default function ScavengerPage() {
 			console.error("Failed to load scavenger data:", err);
 		}
 	}, [user]);
+
+	useEffect(() => {
+		const socket = getSocket();
+		if (!socket) return;
+
+		const handler = async (data) => {
+			console.log("Image processed:", data.objectid);
+			await refreshFindsAndStats();
+		};
+
+		socket.on("image_processed", handler);
+
+		return () => {
+			socket.off("image_processed", handler);
+		};
+	}, [refreshFindsAndStats]);
 
 	useEffect(() => {
 		refreshFindsAndStats();
@@ -77,6 +135,24 @@ export default function ScavengerPage() {
 		setStream(null);
 	}
 
+	async function uploadPhoto() {
+		if (!capturedImage) return;
+
+		const blob = await fetch(capturedImage).then(res => res.blob());
+
+		const formData = new FormData();
+		formData.append("image", blob, "photo.jpg");
+
+		const response = await fetch("/api/upload", {
+			method: "POST",
+			body: formData,
+		});
+
+		const data = await response.json();
+
+		handleVerifyUserSubmission(data.image_url);
+	}
+
 	function closeCamera() {
 		if (stream) stream.getTracks().forEach((t) => t.stop());
 		setStream(null);
@@ -84,36 +160,49 @@ export default function ScavengerPage() {
 		setCameraOpen(false);
 	}
 
-	async function handleMarkFound(objectid) {
-		if (marking.has(objectid)) return;
-		setMarking((prev) => new Set(prev).add(objectid));
+	async function handleVerifyUserSubmission(userImageUrl) {
 		try {
+			let distToObject = 0;
+			try {
+				let userLat, userLon;
+				if (lastPosRef.current) {
+					userLat = lastPosRef.current.lat;
+					userLon = lastPosRef.current.lon;
+				} else {
+					const pos = await fetchGeoPosition();
+					userLat = pos.coords.latitude;
+					userLon = pos.coords.longitude;
+					lastPosRef.current = { lat: userLat, lon: userLon };
+				}
+				distToObject = haversineMeters(
+					userLat,
+					userLon,
+					Number(currLat),
+					Number(currLon),
+				);
+			}
+			catch (e) {
+				console.error("Verify failed:", e);
+				alert(
+					"Couldn't get your location. Enable location services and try again.",
+				);
+			}
+
 			await fetch("/api/scavenger/find", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				credentials: "include",
-				body: JSON.stringify({ objectid }),
-			});
-			await fetch(`/api/scavenger/verify/${objectid}`, {
-				method: "POST",
-				credentials: "include",
+				body: JSON.stringify({ currObjectId, userImageUrl, distToObject }),
 			});
 			await refreshFindsAndStats();
 		} catch (err) {
 			console.error("Failed to mark found:", err);
-		} finally {
-			setMarking((prev) => {
-				const next = new Set(prev);
-				next.delete(objectid);
-				return next;
-			});
 		}
 	}
 
 	const findsMap = new Map(finds.map((f) => [f.objectid, f]));
 	const total = artworks.length;
 	const foundCount = stats?.total_finds ?? 0;
-	const verifiedCount = stats?.verified_finds ?? 0;
 	const score = stats?.total_score ?? 0;
 	const pct = total ? Math.round((foundCount / total) * 100) : 0;
 
@@ -167,7 +256,10 @@ export default function ScavengerPage() {
 									</button>
 									<button
 										className="camera-confirm-btn"
-										onClick={closeCamera}
+										onClick={() => {
+											uploadPhoto();
+											closeCamera();
+										}}
 									>
 										Confirm
 									</button>
@@ -218,12 +310,7 @@ export default function ScavengerPage() {
 				<div className="scav-stats-row">
 					<div className="scav-stat-item">
 						<span className="scav-stat-val">{foundCount}</span>
-						<span className="scav-stat-label">Found</span>
-					</div>
-					<div className="scav-stat-divider" />
-					<div className="scav-stat-item">
-						<span className="scav-stat-val">{verifiedCount}</span>
-						<span className="scav-stat-label">Verified</span>
+						<span className="scav-stat-label">Artworks Found</span>
 					</div>
 					<div className="scav-stat-divider" />
 					<div className="scav-stat-item">
@@ -236,8 +323,18 @@ export default function ScavengerPage() {
 			{/* Artwork list */}
 			<div className="scav-list">
 				{artworks.map((art) => {
-					const found = findsMap.has(art.objectid);
-					const isBusy = marking.has(art.objectid);
+					/*
+						verify_state:
+						0 = submitted, 1 = accepted,
+						2 = failed due to location, 3 = failed due to image,
+						4 = not submitted
+					*/
+					let verify_state = 4;
+					if (findsMap.has(art.objectid)) {
+						verify_state = findsMap.get(art.objectid).verify_state;
+					}
+					const found = verify_state == 1 ? true : false;
+
 					const thumb = art.image_url
 						? `${art.image_url}/full/120,/0/default.jpg`
 						: null;
@@ -264,27 +361,25 @@ export default function ScavengerPage() {
 								<span
 									className={`scav-card-status${found ? " scav-status-found" : " scav-status-pending"}`}
 								>
-									{found ? "✓ Verified" : "Not found"}
+									{VERIFY_LABELS[verify_state] ?? "Unknown"}
 								</span>
 							</div>
-							<div className="scav-card-actions">
-								<button
-									className="scav-camera-btn"
-									onClick={openCamera}
-									aria-label="Open camera"
-								>
-									📷
-								</button>
-								{!found && (
+							{!found && (
+								<div className="scav-card-actions">
 									<button
-										className="scav-mark-found-btn"
-										onClick={() => handleMarkFound(art.objectid)}
-										disabled={isBusy}
+										className="scav-camera-btn"
+										onClick={() => {
+											setCurrObjectId(art.objectid);
+											setCurrLat(art.lat);
+											setCurrLon(art.lon);
+											openCamera();
+										}}
+										aria-label="Take photo to verify"
 									>
-										{isBusy ? "…" : "Found"}
+										📷
 									</button>
-								)}
-							</div>
+								</div>
+							)}
 						</div>
 					);
 				})}

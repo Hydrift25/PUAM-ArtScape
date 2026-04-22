@@ -102,15 +102,29 @@ body {
 }
 
 .custom-marker {
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    /* Explicit dimensions let Mapbox read offsetWidth/offsetHeight correctly
+       at marker creation time (before the first browser layout pass). */
+    position: relative;
     cursor: pointer;
 }
 
-.marker-inner {
+/* Root dimensions — Mapbox uses these for the center-anchor offset calculation */
+.marker-all {
     width: 15px;
     height: 15px;
+}
+
+.marker-nearby {
+    width: 24px;
+    height: 24px;
+}
+
+.marker-inner {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
     border-radius: 50%;
     border: 2px solid white;
     box-shadow: 0 2px 5px rgba(0,0,0,0.3);
@@ -119,8 +133,6 @@ body {
 
 .marker-nearby .marker-inner {
     background-color: #EE7F2D;
-    width: 24px;
-    height: 24px;
 }
 
 .marker-all .marker-inner {
@@ -391,6 +403,151 @@ body {
 }
 
 /* ============================================================
+   PROFILE DROPDOWN
+   ============================================================ */
+
+/* Outer container — groups trigger + popover for click-outside detection */
+.profile-dropdown {
+    position: relative;
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+/* Trigger button — reset all button defaults, wraps the .navbar-avatar circle */
+.profile-dropdown-trigger {
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    border-radius: 50%;
+    line-height: 0;
+}
+
+.profile-dropdown-trigger:focus-visible {
+    outline: 2px solid rgba(255, 255, 255, 0.8);
+    outline-offset: 2px;
+}
+
+/* Popover card — positioned via fixed + inline top/right computed by JS */
+.profile-dropdown-popover {
+    position: fixed;
+    z-index: 300; /* above navbar (200) and banners (150); below BottomSheet (1000) */
+    background: #fff;
+    border-radius: 16px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
+    min-width: 220px;
+    max-width: calc(100vw - 32px);
+    padding: 12px 0 4px;
+    overflow: hidden; /* clips hover backgrounds to card's border-radius */
+}
+
+/* User info row: 32px avatar + stacked name/email */
+.profile-dropdown-user-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 16px 12px;
+}
+
+/* 32px circular avatar inside the popover */
+.profile-dropdown-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: rgba(232, 69, 10, 0.12);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #E8450A;
+    font-weight: 700;
+    font-size: 0.8rem;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.profile-dropdown-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.profile-dropdown-user-info {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.profile-dropdown-name {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #1a1a1a;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.profile-dropdown-email {
+    font-size: 0.75rem;
+    color: #999;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.profile-dropdown-divider {
+    border: none;
+    border-top: 1px solid #f0ece8;
+    margin: 4px 0;
+}
+
+/* Greyed-out placeholder rows — non-interactive, reserved for future features */
+.profile-dropdown-placeholder-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    opacity: 0.4;
+    cursor: default;
+}
+
+.profile-dropdown-placeholder-label {
+    font-size: 0.875rem;
+    color: #1a1a1a;
+}
+
+.profile-dropdown-placeholder-soon {
+    font-size: 0.7rem;
+    color: #888;
+    font-style: italic;
+}
+
+/* Sign out button — full width, destructive orange, left-aligned, 44px tap target */
+.profile-dropdown-signout-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    background: none;
+    border: none;
+    padding: 10px 16px;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #E8450A;
+    cursor: pointer;
+    text-align: left;
+    box-sizing: border-box;
+    min-height: 44px;
+    transition: background 0.15s;
+}
+
+.profile-dropdown-signout-btn:hover {
+    background: #fff0ec;
+}
+
+/* ============================================================
    BOTTOM NAV
    ============================================================ */
 .bottom-nav {
@@ -614,8 +771,7 @@ body {
 
 .bs-image {
     width: 100%;
-    max-height: 240px;
-    object-fit: cover;
+    height: auto;
     border-radius: 0;
     display: block;
 }
@@ -813,14 +969,24 @@ body {
 }
 
 .nearest-panel--hidden {
-    transform: translateY(100%);
-    opacity: 0;
-    pointer-events: none;
+    display: none;
+}
+
+/* Guest layout has no bottom nav — drop the 60px nav offset */
+body:has(.map-container-guest) .nearest-panel {
+    bottom: 0;
 }
 
 @keyframes slideUp {
     from { transform: translateY(100%); }
     to   { transform: translateY(0); }
+}
+
+.nearest-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
 }
 
 .nearest-panel-title {
@@ -829,7 +995,29 @@ body {
     color: #888;
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    margin: 0 0 8px;
+    margin: 0;
+}
+
+/* ── Panel minimize button (✕ inside NearestArtworksPanel header) ── */
+.panel-minimize-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #bbb;
+    font-size: 0.8rem;
+    /* padding achieves 44×44px tap target without a large visual footprint */
+    padding: 12px 10px;
+    margin: -12px -4px -12px 0;
+    line-height: 1;
+    border-radius: 4px;
+    transition: color 0.15s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.panel-minimize-btn:hover {
+    color: #555;
 }
 
 .nearest-row {
@@ -907,6 +1095,38 @@ body {
     font-size: 0.75rem;
     font-weight: 600;
     flex-shrink: 0;
+}
+
+/* ── Restore pill (floating button shown when NearestArtworksPanel is minimized) ── */
+.restore-pill {
+    position: fixed;
+    bottom: 72px; /* 60px bottom-nav + 12px gap */
+    left: 16px;
+    z-index: 50;
+    background: #FDF3E7;
+    color: #E8450A;
+    border: 1.5px solid #E8450A;
+    border-radius: 16px;
+    padding: 0 16px;
+    font-size: 0.85rem;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    min-height: 44px;
+    box-sizing: border-box;
+    box-shadow: 0 2px 12px rgba(232, 69, 10, 0.15);
+    transition: background 0.15s;
+}
+
+.restore-pill:hover {
+    background: #FAEBD7;
+}
+
+/* Guest layout has no bottom nav — anchor to screen edge with safe-area clearance */
+.restore-pill--guest {
+    bottom: calc(16px + env(safe-area-inset-bottom, 0px));
 }
 
 /* ============================================================
@@ -1311,9 +1531,9 @@ body {
     margin-bottom: 6px;
 }
 
-.podium-gold .lb-podium-avatar  { background: #E8450A; width: 60px; height: 60px; font-size: 1.1rem; }
-.podium-silver .lb-podium-avatar { background: #a0aec0; }
-.podium-bronze .lb-podium-avatar { background: #b7835c; }
+.podium-gold .lb-podium-avatar  { background: #FFD700; color: #1a1a1a; width: 60px; height: 60px; font-size: 1.1rem; }
+.podium-silver .lb-podium-avatar { background: #C0C0C0; color: #1a1a1a; }
+.podium-bronze .lb-podium-avatar { background: #CD7F32; }
 
 .lb-podium-name {
     font-size: 0.82rem;
@@ -1338,9 +1558,9 @@ body {
     color: #fff;
 }
 
-.podium-gold .lb-podium-base  { background: #E8450A; padding: 10px 0; }
-.podium-silver .lb-podium-base { background: #a0aec0; }
-.podium-bronze .lb-podium-base { background: #b7835c; }
+.podium-gold .lb-podium-base  { background: #FFD700; color: #1a1a1a; padding: 10px 0; }
+.podium-silver .lb-podium-base { background: #C0C0C0; color: #1a1a1a; }
+.podium-bronze .lb-podium-base { background: #CD7F32; }
 
 .lb-rankings-card {
     padding: 14px 16px;
@@ -1407,6 +1627,16 @@ body {
     font-size: 0.9rem;
     font-weight: 600;
     color: #1a1a1a;
+    display: flex;
+    align-items: center;
+    gap: 0;
+}
+
+.lb-row-name-text {
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .lb-row-sub {
@@ -1447,6 +1677,140 @@ body {
 
 .lb-how-orange { background: #fff0ec; }
 .lb-how-blue   { background: #EBF4FF; }
+
+.lb-loading,
+.lb-empty {
+    font-size: 0.9rem;
+    color: #888;
+    text-align: center;
+    padding: 32px 16px;
+}
+
+.lb-your-rank-card {
+    margin: 1.25rem 1rem 0;
+    background: #FDF3E7;
+    border: 1.5px solid #E8450A;
+    border-radius: 16px;
+    padding: 0.75rem 1rem;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.lb-your-rank-card.lb-your-rank-unranked {
+    background: #f5f5f5;
+    border-style: dashed;
+    border-color: #e0e0e0;
+}
+
+.lb-yr-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: #E8450A;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 500;
+    flex-shrink: 0;
+}
+
+.lb-yr-avatar--empty {
+    background: #ccc;
+}
+
+.lb-yr-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.lb-yr-label {
+    font-size: 10px;
+    color: #E8450A;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.lb-your-rank-unranked .lb-yr-label {
+    color: #888;
+}
+
+.lb-yr-name {
+    font-size: 14px;
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.lb-yr-pts {
+    font-size: 12px;
+    color: #888;
+}
+
+.lb-yr-rank {
+    font-size: 22px;
+    font-weight: 500;
+    color: #E8450A;
+}
+
+.lb-your-rank-unranked .lb-yr-rank {
+    color: #888;
+}
+
+.lb-podium-item--me {
+    outline: 2.5px solid #E8450A;
+    outline-offset: 2px;
+    border-radius: 8px;
+}
+
+.lb-row-you-tag {
+    display: inline-block;
+    font-size: 10px;
+    background: #E8450A;
+    color: #fff;
+    border-radius: 4px;
+    padding: 1px 5px;
+    margin-left: 6px;
+    flex-shrink: 0;
+}
+
+.lb-separator {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 0;
+}
+
+.lb-sep-line {
+    flex: 1;
+    border-top: 1.5px dashed #e8e8e8;
+}
+
+.lb-sep-label {
+    font-size: 11px;
+    color: #888;
+    white-space: nowrap;
+}
+
+.lb-show-more-btn {
+    display: block;
+    width: calc(100% - 2rem);
+    margin: 10px 1rem 0;
+    padding: 9px;
+    border: 0.5px solid #e8e8e8;
+    border-radius: 8px;
+    background: none;
+    font-size: 13px;
+    cursor: pointer;
+    color: #555;
+}
+
+.lb-show-more-btn:hover {
+    background: #f5f5f5;
+}
 
 /* ============================================================
    PROFILE PAGE
@@ -1635,4 +1999,409 @@ body {
 
 .profile-cta-btn:hover {
     background: #c93a08;
+}
+
+@keyframes markerPopIn {
+    0%   { transform: scale(1); }
+    40%  { transform: scale(1.18); }
+    100% { transform: scale(1); }
+}
+.marker-popin {
+    animation: markerPopIn 0.35s ease forwards;
+}
+
+/* ============================================================
+   LOCATION BANNERS
+   ============================================================ */
+.loc-banner {
+    position: fixed;
+    top: 64px;
+    left: 0;
+    right: 0;
+    z-index: 150;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 14px;
+    font-size: 0.82rem;
+    font-weight: 500;
+    flex-wrap: wrap;
+}
+
+.loc-banner-prompt {
+    background: #E8450A;
+    color: #fff;
+}
+
+.loc-banner-denied {
+    background: #1a1a1a;
+    color: rgba(255,255,255,0.85);
+}
+
+.loc-banner-text {
+    flex: 1;
+    min-width: 0;
+}
+
+.loc-banner-btn {
+    background: #fff;
+    color: #E8450A;
+    border: none;
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
+    transition: opacity 0.15s;
+}
+
+.loc-banner-btn:disabled {
+    opacity: 0.65;
+    cursor: default;
+}
+
+.loc-banner-link {
+    background: none;
+    border: none;
+    color: rgba(255,255,255,0.75);
+    font-size: inherit;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 0;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.loc-banner-dismiss {
+    background: none;
+    border: none;
+    color: rgba(255,255,255,0.6);
+    font-size: 0.85rem;
+    cursor: pointer;
+    padding: 4px;
+    flex-shrink: 0;
+    line-height: 1;
+}
+
+/* Expands downward from the denied banner into the map */
+.loc-denied-tooltip {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: #2a2a2a;
+    color: rgba(255,255,255,0.85);
+    padding: 12px 16px;
+    font-size: 0.8rem;
+    line-height: 1.7;
+    border-radius: 0 0 8px 8px;
+}
+
+/* ============================================================
+   BOTTOM SHEET — location denied note
+   ============================================================ */
+.bs-loc-denied-note {
+    margin: 0;
+    font-size: 0.8rem;
+    color: #888;
+    text-align: center;
+}
+
+/* ============================================================
+   BOTTOM SHEET — navigation mini mode
+   ============================================================ */
+.bs-nav-mini {
+    height: 64px;
+    overflow: hidden;
+}
+
+.bs-nav-mini-content {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 16px;
+    height: 100%;
+}
+
+.bs-nav-mini-title {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #1a1a1a;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex: 1;
+    margin-right: 12px;
+}
+
+.bs-nav-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: #FFF3ED;
+    color: #E8450A;
+    border-radius: 12px;
+    padding: 3px 10px;
+    font-size: 0.78rem;
+    white-space: nowrap;
+}
+
+.bs-nav-badge::before {
+    content: '';
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    background: #E8450A;
+    border-radius: 50%;
+}
+
+/* ============================================================
+   DIRECTIONS PANEL
+   ============================================================ */
+.directions-panel {
+    position: fixed;
+    bottom: 56px;
+    left: 0;
+    right: 0;
+    z-index: 500;
+    background: white;
+    border-radius: 16px 16px 0 0;
+    box-shadow: 0 -4px 20px rgba(0,0,0,0.12);
+    transition: height 0.35s ease;
+}
+
+.directions-handle {
+    width: 36px;
+    height: 4px;
+    background: #ddd;
+    border-radius: 2px;
+    margin: 10px auto 0;
+}
+
+.directions-preview {
+    padding: 12px 20px 24px;
+}
+
+.directions-preview-title {
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: #1a1a1a;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin: 8px 0 6px;
+}
+
+.directions-preview-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.9rem;
+    color: #555;
+    margin-bottom: 20px;
+}
+
+.directions-start-btn {
+    width: 100%;
+    padding: 14px;
+    background: #E8450A;
+    color: white;
+    border: none;
+    border-radius: 10px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    margin-bottom: 10px;
+}
+
+.directions-cancel-btn {
+    display: block;
+    width: 100%;
+    text-align: center;
+    background: none;
+    border: none;
+    color: #888;
+    font-size: 0.9rem;
+    cursor: pointer;
+    padding: 4px 0;
+}
+
+.directions-summary {
+    height: 72px;
+    padding: 0 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+}
+
+.directions-distance {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #1a1a1a;
+}
+
+.directions-eta {
+    font-size: 0.85rem;
+    color: #666;
+    flex: 1;
+}
+
+.directions-end-btn {
+    background: #E8450A;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-size: 0.85rem;
+    cursor: pointer;
+}
+
+.directions-chevron {
+    display: inline-block;
+    font-size: 1.1rem;
+    color: #aaa;
+    transition: transform 0.25s ease;
+    line-height: 1;
+    user-select: none;
+    margin: 0 4px;
+}
+
+.directions-chevron--down {
+    transform: rotate(0deg);
+}
+
+.directions-chevron--up {
+    transform: rotate(180deg);
+}
+
+.directions-steps {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.35s ease;
+}
+
+.directions-steps--expanded {
+    max-height: calc(50vh - 72px);
+    overflow-y: auto;
+}
+
+.directions-step {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 16px;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.directions-step-text {
+    flex: 1;
+    font-size: 0.88rem;
+    line-height: 1.4;
+    color: #1a1a1a;
+}
+
+.directions-step-dist {
+    font-size: 0.8rem;
+    color: #999;
+    white-space: nowrap;
+    padding-top: 2px;
+}
+
+.directions-arrived {
+    padding: 32px 20px 28px;
+    text-align: center;
+}
+
+.directions-arrived-icon {
+    font-size: 2.5rem;
+    color: #2d6a2d;
+    margin-bottom: 12px;
+}
+
+.directions-arrived-heading {
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: #2d6a2d;
+    margin-bottom: 4px;
+}
+
+.directions-arrived-title {
+    font-size: 0.95rem;
+    color: #555;
+    margin-bottom: 24px;
+}
+
+.directions-done-btn {
+    width: 100%;
+    padding: 14px;
+    background: #2d6a2d;
+    color: white;
+    border: none;
+    border-radius: 10px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+/* ============================================================
+   BOTTOM SHEET — succinct directions button
+   ============================================================ */
+.bs-directions-btn--outline {
+    border: 1.5px solid #E8450A;
+    color: #E8450A;
+    background: transparent;
+    border-radius: 8px;
+    padding: 10px 16px;
+    font-size: 0.9rem;
+    width: 100%;
+    cursor: pointer;
+    margin-top: 8px;
+}
+
+.bs-directions-btn--outline:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+/* ============================================================
+   RE-CENTER BUTTON
+   ============================================================ */
+.recenter-btn {
+    position: fixed;
+    z-index: 510;
+    bottom: calc(56px + 88px + 12px);
+    right: 16px;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: white;
+    border: none;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+    font-size: 1.3rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 0.2s ease;
+}
+
+.recenter-btn--hidden {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.recenter-btn--visible {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.recenter-btn--guest {
+    bottom: calc(64px + 88px + 12px);
+}
+
+.directions-panel--guest {
+    bottom: 64px;
 }

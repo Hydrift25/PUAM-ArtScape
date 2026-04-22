@@ -3,7 +3,25 @@ import flask
 from flask import send_from_directory, session, redirect, url_for
 from authlib.integrations.flask_client import OAuth
 from flask_cors import CORS
+from flask_compress import Compress
 from app.database import db
+from multiprocessing import Process, Queue
+import torch
+import clip
+from PIL import Image
+from io import BytesIO
+import requests
+import cloudinary.uploader
+from dotenv import load_dotenv
+from shared import image_verify_queue
+from flask_socketio import SocketIO, join_room
+from flask import request
+
+print("QUEUE ID (Flask):", id(image_verify_queue))
+
+load_dotenv()
+
+SCRIPT_DIR = os.path.dirname(__file__)
 
 #-----------------------------------------------------------------------
 
@@ -13,6 +31,7 @@ app = flask.Flask(
     static_url_path=''
 )
 app.secret_key = os.getenv("APP_SECRET_KEY")
+Compress(app)
 frontend_url = os.getenv("FRONTEND_URL")
 if frontend_url:
     CORS(app, supports_credentials=True, origins=frontend_url)
@@ -28,6 +47,19 @@ oauth.register(
     client_kwargs={'scope': 'openid email profile'},
 )
 
+socketio = SocketIO(app, cors_allowed_origins="*")
+
+@socketio.on('connect')
+def handle_connect(auth):
+    user_id = auth.get("user_id")
+
+    print(f"User id {user_id} joined socket!!!")
+
+    if not user_id:
+        return False  # reject connection
+
+    join_room(f"user_{user_id}")
+
 #-----------------------------------------------------------------------
 
 
@@ -35,7 +67,9 @@ oauth.register(
 @app.route("/api/artworks", methods=['GET'])
 def artworks():
     data = db.get_all_artworks()
-    return flask.jsonify(data)
+    resp = flask.jsonify(data)
+    resp.headers['Cache-Control'] = 'public, max-age=300'
+    return resp
 
 @app.route("/api/artworks/nearby", methods=['GET'])
 def nearby():
@@ -93,13 +127,27 @@ def update_visited_artwork():
 
 @app.route("/api/scavenger/find", methods=['POST'])
 def scavenger_find():
+    print(flask.request.data)
+    print(flask.request.get_json())
     user = session.get("user")
     if not user:
         return flask.jsonify({"error": "Not logged in"}), 401
-    objectid = flask.request.json.get("objectid")
+
+    objectid = flask.request.json.get("currObjectId")
+    user_image_url = flask.request.json.get("userImageUrl")
+    dist_to_object = flask.request.json.get("distToObject")
     if not objectid:
         return flask.jsonify({"error": "No objectid provided"}), 400
-    db.record_find(user["id"], objectid)
+    if not user_image_url:
+        return flask.jsonify({"error": "No user image URL provided"}), 400
+    if not dist_to_object:
+        return flask.jsonify({"error": "No distance to object provided"}), 400
+
+    db.record_find(user["id"], objectid, user_image_url)
+
+    print("ENQUEING JOB: ", user["id"], objectid, user_image_url, dist_to_object, id(image_verify_queue))
+    image_verify_queue.put((user["id"], objectid, user_image_url, dist_to_object))
+
     return flask.jsonify({"success": True})
 
 @app.route("/api/scavenger/verify/<int:objectid>", methods=['POST'])
@@ -107,7 +155,7 @@ def scavenger_verify(objectid):
     user = session.get("user")
     if not user:
         return flask.jsonify({"error": "Not logged in"}), 401
-    db.verify_find(user["id"], objectid)
+    db.update_verify_state(user["id"], objectid, 1)
     return flask.jsonify({"success": True})
 
 @app.route("/api/scavenger/finds", methods=['GET'])
@@ -126,6 +174,9 @@ def scavenger_stats():
 
 @app.route("/api/leaderboard", methods=['GET'])
 def leaderboard():
+    user = session.get("user")
+    if not user:
+        return flask.jsonify({"error": "Not logged in"}), 401
     return flask.jsonify(db.get_leaderboard())
 
 @app.route("/api/leaderboard/me", methods=['GET'])
@@ -167,6 +218,25 @@ def auth_logout():
 @app.route("/api/auth/me")
 def auth_me():
     user = session.get("user")
-    if user:
-        return flask.jsonify(user)
-    return flask.jsonify({"user": None})
+    resp = flask.jsonify(user if user else {"user": None})
+    resp.headers['Cache-Control'] = 'private, max-age=60'
+    return resp
+
+#-----------------------------------------------------------------------
+
+@app.route("/api/upload", methods=["POST"])
+def upload():
+    file = flask.request.files.get("image")
+
+    if not file:
+        return flask.jsonify({"error": "No file"}), 400
+
+    # Upload to Cloudinary
+    result = cloudinary.uploader.upload(file)
+
+    image_url = result["secure_url"]
+    print(image_url)
+
+    return flask.jsonify({
+        "image_url": image_url,
+    })

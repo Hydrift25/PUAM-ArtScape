@@ -18,7 +18,7 @@ const VERIFY_RADIUS_M = 200;
 function CrosshairIcon() {
 	return (
 		<svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" xmlns="http://www.w3.org/2000/svg">
-			<circle cx="10" cy="10" r="3" />
+			<circle cx="10" cy="10" r="7.5" />
 			<line x1="10" y1="1" x2="10" y2="5" />
 			<line x1="10" y1="15" x2="10" y2="19" />
 			<line x1="1" y1="10" x2="5" y2="10" />
@@ -758,7 +758,7 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 			locationStatus === "granted" && lastPosRef.current
 				? [lastPosRef.current.lon, lastPosRef.current.lat]
 				: [-74.6551, 40.3457];
-		map.current.flyTo({ center, zoom: 15, duration: 600 });
+		map.current.flyTo({ center, zoom: 15, pitch: 0, bearing: 0, duration: 600 });
 	}
 
 	function handleRecenter() {
@@ -834,7 +834,7 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 			)}
 
 			{/* Location prompt banner — shown while we're waiting for user to enable location */}
-			{!isGuest && (locationStatus === "pending" || locationStatus === "loading") && (
+			{(locationStatus === "pending" || locationStatus === "loading") && (
 				<div className="loc-banner loc-banner-prompt">
 					<span className="loc-banner-text">
 						📍 Find the 3 artworks closest to you →
@@ -850,7 +850,7 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 			)}
 
 			{/* Location denied banner — dismissable for the session */}
-			{!isGuest && locationStatus === "denied" && !deniedBannerDismissed && (
+			{locationStatus === "denied" && !deniedBannerDismissed && (
 				<div className="loc-banner loc-banner-denied">
 					<span className="loc-banner-text">
 						📍 Location off · Showing all artworks ·{" "}

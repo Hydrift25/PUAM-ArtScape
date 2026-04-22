@@ -8,7 +8,16 @@ export default function ScavengerPage({ artworks = [] }) {
 	const [cameraOpen, setCameraOpen] = useState(false);
 	const [stream, setStream] = useState(null);
 	const [capturedImage, setCapturedImage] = useState(null);
+	const [locationGranted, setLocationGranted] = useState(false);
 	const videoRef = useRef(null);
+
+	useEffect(() => {
+		if (!navigator.permissions) return;
+		navigator.permissions.query({ name: "geolocation" }).then((result) => {
+			setLocationGranted(result.state === "granted");
+			result.onchange = () => setLocationGranted(result.state === "granted");
+		}).catch(() => {});
+	}, []);
 
 	const refreshFindsAndStats = useCallback(async () => {
 		if (!user) return;
@@ -228,9 +237,10 @@ export default function ScavengerPage({ artworks = [] }) {
 							{!found && (
 								<div className="scav-card-actions">
 									<button
-										className="scav-camera-btn"
+										className={`scav-camera-btn${!locationGranted ? " btn--location-disabled" : ""}`}
 										onClick={openCamera}
-										aria-label="Take photo to verify"
+										disabled={!locationGranted}
+										aria-label={!locationGranted ? "Enable location to verify this artwork" : "Take photo to verify"}
 									>
 										📷
 									</button>

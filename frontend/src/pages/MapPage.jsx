@@ -15,6 +15,26 @@ import { useAuth } from "../context/AuthContext";
 const FOUND_STORAGE_KEY = "artscape.foundIds";
 const VERIFY_RADIUS_M = 200;
 
+function CrosshairIcon() {
+	return (
+		<svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" xmlns="http://www.w3.org/2000/svg">
+			<circle cx="10" cy="10" r="3" />
+			<line x1="10" y1="1" x2="10" y2="5" />
+			<line x1="10" y1="15" x2="10" y2="19" />
+			<line x1="1" y1="10" x2="5" y2="10" />
+			<line x1="15" y1="10" x2="19" y2="10" />
+		</svg>
+	);
+}
+
+function NavigationArrowIcon() {
+	return (
+		<svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+			<path d="M10 2 L18 18 L10 14 L2 18 Z" />
+		</svg>
+	);
+}
+
 function haversineMeters(lat1, lon1, lat2, lon2) {
 	const R = 6371000;
 	const toRad = (d) => (d * Math.PI) / 180;
@@ -638,6 +658,9 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 			style: "mapbox://styles/mapbox/streets-v12",
 			center: [-74.6514, 40.343],
 			zoom: 15,
+			minZoom: 13,
+			maxZoom: 20,
+			maxBounds: [[-74.678, 40.332], [-74.632, 40.360]]
 		});
 
 		map.current.on("load", () => {
@@ -729,6 +752,15 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 		};
 	}, [navigationState?.watchId]);
 
+	function handleMapRecenter() {
+		if (!map.current) return;
+		const center =
+			locationStatus === "granted" && lastPosRef.current
+				? [lastPosRef.current.lon, lastPosRef.current.lat]
+				: [-74.6551, 40.3457];
+		map.current.flyTo({ center, zoom: 15, duration: 600 });
+	}
+
 	function handleRecenter() {
 		userInteractingRef.current = false;
 		setShowRecenter(false);
@@ -756,6 +788,29 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 				ref={mapContainer}
 				className={`map-container ${isGuest ? "map-container-guest" : "map-container-auth"}`}
 			/>
+			<div className="map-controls">
+				<button
+					className="map-control-btn"
+					onClick={() => map.current?.zoomIn()}
+					aria-label="Zoom in"
+				>
+					+
+				</button>
+				<button
+					className="map-control-btn"
+					onClick={() => map.current?.zoomOut()}
+					aria-label="Zoom out"
+				>
+					−
+				</button>
+				<button
+					className="map-control-btn"
+					onClick={handleMapRecenter}
+					aria-label="Recenter map"
+				>
+					<CrosshairIcon />
+				</button>
+			</div>
 			<ScavengerSidebar
 				open={sidebarOpen}
 				onClose={() => setSidebarOpen(false)}
@@ -860,7 +915,7 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 					onClick={handleRecenter}
 					aria-label="Re-center map"
 				>
-					⊙
+					<NavigationArrowIcon />
 				</button>
 			)}
 		</>

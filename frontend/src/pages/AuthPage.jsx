@@ -39,7 +39,7 @@ export default function AuthPage() {
 					</button>
 					<hr className="auth-divider" />
 					<button className="auth-btn-guest" onClick={continueAsGuest}>
-						Continue as Guest
+						Continue to Map
 					</button>
 				</div>
 				<div className="auth-stats">

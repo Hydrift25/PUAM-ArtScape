@@ -11,6 +11,7 @@ import {
 	createUserMarkerEl,
 } from "../components/ArtworkMarker";
 import { useAuth } from "../context/AuthContext";
+import { getSocket } from "../services/socket";
 
 const FOUND_STORAGE_KEY = "artscape.foundIds";
 const VERIFY_RADIUS_M = 200;
@@ -237,6 +238,20 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 	useEffect(() => {
 		localStorage.setItem(FOUND_STORAGE_KEY, JSON.stringify([...foundIds]));
 	}, [foundIds]);
+
+	useEffect(() => {
+		const socket = getSocket();
+		if (!socket) return;
+		const handler = async () => {
+			const res = await fetch("/api/artworks/visited", { credentials: "include" });
+			if (res.ok) {
+				const data = await res.json();
+				setFoundIds(new Set((data ?? []).map((d) => d.objectid)));
+			}
+		};
+		socket.on("image_processed", handler);
+		return () => { socket.off("image_processed", handler); };
+	}, []);
 
 	async function toggleFavorite(objectid) {
 		try {

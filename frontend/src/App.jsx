@@ -1,6 +1,7 @@
 import { Suspense, lazy, useEffect, useState } from "react";
 import { BrowserRouter, Routes, Route, NavLink, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
+import { initSocket, disconnectSocket } from "./services/socket";
 import MapPage from "./pages/MapPage";
 import ProfileDropdown from "./components/ProfileDropdown";
 
@@ -121,6 +122,13 @@ const lazyFallback = (
 
 function AppContent() {
 	const { user, loading: authLoading, guest } = useAuth();
+
+	useEffect(() => {
+		if (!user?.id) return;
+		initSocket(user.id);
+		return () => { disconnectSocket(); };
+	}, [user?.id]);
+
 	const location = useLocation();
 	const [artworks, setArtworks] = useState([]);
 	const [artworksLoading, setArtworksLoading] = useState(true);

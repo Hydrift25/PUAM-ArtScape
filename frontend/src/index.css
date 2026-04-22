@@ -1403,6 +1403,36 @@ body:has(.map-container-guest) .nearest-panel {
     color: #666;
 }
 
+/* Verification status pill — ScavengerPage artwork cards */
+.scav-status-pill {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 20px;
+    font-size: 0.78rem;
+    font-weight: 500;
+}
+
+.scav-status-1 {
+    background: #e6f4ea;
+    color: #1e7e34;
+}
+
+.scav-status-0 {
+    background: #FDF3E7;
+    color: #b05a00;
+}
+
+.scav-status-2,
+.scav-status-3 {
+    background: #fdecea;
+    color: #c0392b;
+}
+
+.scav-status-none {
+    background: #f5f5f5;
+    color: #888;
+}
+
 .scav-guest-card {
     display: flex;
     flex-direction: column;

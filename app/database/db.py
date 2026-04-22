@@ -10,6 +10,13 @@ db_url = os.getenv("DATABASE_URL")
 
 #-----------------------------------------------------------------------
 
+VERIFY_STATE_PENDING         = 0  # submitted, awaiting worker
+VERIFY_STATE_ACCEPTED        = 1  # accepted
+VERIFY_STATE_FAILED_LOCATION = 2  # too far from artwork
+VERIFY_STATE_FAILED_IMAGE    = 3  # image mismatch
+
+#-----------------------------------------------------------------------
+
 def get_all_artworks():
     """
     Returns artworks with location + metadata.
@@ -210,15 +217,34 @@ def update_visited_artwork(user_id, objectid):
             conn.commit()
 
 
-def record_find(user_id, objectid):
+def record_find(user_id, objectid, photo_url):
+    # ON CONFLICT UPDATE allows re-submission when prior verification failed
     query = """
-        INSERT INTO scavenger_hunt_finds (user_id, objectid, verified)
-        VALUES (%s, %s, FALSE)
-        ON CONFLICT (user_id, objectid) DO NOTHING;
+        INSERT INTO scavenger_hunt_finds (user_id, objectid, photo_url, verified, verify_state)
+        VALUES (%s, %s, %s, FALSE, 0)
+        ON CONFLICT (user_id, objectid)
+        DO UPDATE SET
+            photo_url = EXCLUDED.photo_url,
+            verified = EXCLUDED.verified,
+            verify_state = EXCLUDED.verify_state;
     """
     with contextlib.closing(psycopg.connect(db_url)) as conn:
         with contextlib.closing(conn.cursor()) as cur:
-            cur.execute(query, (user_id, objectid))
+            cur.execute(query, (user_id, objectid, photo_url))
+            conn.commit()
+
+
+def update_verify_state(user_id, objectid, verify_state):
+    # Sets verified=TRUE only when accepted; both columns updated while verified is still in use
+    verified = (verify_state == VERIFY_STATE_ACCEPTED)
+    query = """
+        UPDATE scavenger_hunt_finds
+        SET verified = %s, verify_state = %s
+        WHERE user_id = %s AND objectid = %s;
+    """
+    with contextlib.closing(psycopg.connect(db_url)) as conn:
+        with contextlib.closing(conn.cursor()) as cur:
+            cur.execute(query, (verified, verify_state, user_id, objectid))
             conn.commit()
 
 
@@ -239,6 +265,7 @@ def get_finds(user_id):
         SELECT
             s.objectid,
             s.verified,
+            s.verify_state,
             s.found_at,
             d.title,
             d.image_url
@@ -256,9 +283,10 @@ def get_finds(user_id):
         {
             "objectid": r[0],
             "verified": r[1],
-            "found_at": r[2].isoformat() if r[2] else None,
-            "title": r[3],
-            "image_url": r[4],
+            "verify_state": r[2],
+            "found_at": r[3].isoformat() if r[3] else None,
+            "title": r[4],
+            "image_url": r[5],
         }
         for r in rows
     ]

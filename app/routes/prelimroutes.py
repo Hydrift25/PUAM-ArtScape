@@ -5,7 +5,10 @@ from authlib.integrations.flask_client import OAuth
 from authlib.integrations.base_client.errors import OAuthError
 from flask_cors import CORS
 from flask_compress import Compress
+from flask_socketio import SocketIO, join_room
+import cloudinary.uploader
 from app.database import db
+from app.services.shared import image_verify_queue
 
 #-----------------------------------------------------------------------
 
@@ -30,6 +33,15 @@ oauth.register(
     server_metadata_url='https://accounts.google.com/.well-known/openid-configuration',
     client_kwargs={'scope': 'openid email profile'},
 )
+
+socketio = SocketIO(app, cors_allowed_origins="*")
+
+@socketio.on('connect')
+def handle_connect(auth):
+    user_id = auth.get("user_id") if auth else None
+    if not user_id:
+        return False
+    join_room(f"user_{user_id}")
 
 #-----------------------------------------------------------------------
 
@@ -102,10 +114,25 @@ def scavenger_find():
     if not user:
         return flask.jsonify({"error": "Not logged in"}), 401
     objectid = flask.request.json.get("objectid")
+    image_url = flask.request.json.get("imageUrl")
+    dist_to_object = flask.request.json.get("distToObject")
     if not objectid:
         return flask.jsonify({"error": "No objectid provided"}), 400
-    db.record_find(user["id"], objectid)
+    if not image_url:
+        return flask.jsonify({"error": "No image URL provided"}), 400
+    if dist_to_object is None:
+        return flask.jsonify({"error": "No distance provided"}), 400
+    db.record_find(user["id"], objectid, image_url)
+    image_verify_queue.put((user["id"], objectid, image_url, dist_to_object))
     return flask.jsonify({"success": True})
+
+@app.route("/api/upload", methods=["POST"])
+def upload():
+    file = flask.request.files.get("image")
+    if not file:
+        return flask.jsonify({"error": "No file"}), 400
+    result = cloudinary.uploader.upload(file)
+    return flask.jsonify({"image_url": result["secure_url"]})
 
 @app.route("/api/scavenger/verify/<int:objectid>", methods=['POST'])
 def scavenger_verify(objectid):

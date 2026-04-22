@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
+import { getSocket } from "../services/socket";
+
+const VERIFY_STATE = {
+	PENDING: 0,
+	ACCEPTED: 1,
+	FAILED_LOCATION: 2,
+	FAILED_IMAGE: 3,
+};
 
 export default function ScavengerPage({ artworks = [] }) {
 	const { user, login } = useAuth();
@@ -8,12 +16,43 @@ export default function ScavengerPage({ artworks = [] }) {
 	const [cameraOpen, setCameraOpen] = useState(false);
 	const [stream, setStream] = useState(null);
 	const [capturedImage, setCapturedImage] = useState(null);
+	const [currObjectId, setCurrObjectId] = useState(null);
+	const [currLat, setCurrLat] = useState(null);
+	const [currLon, setCurrLon] = useState(null);
 	const [locationStatus, setLocationStatus] = useState("pending");
 	const [nearbyIds, setNearbyIds] = useState(new Set());
 	const [nearbyDistances, setNearbyDistances] = useState(new Map());
 	const [showDeniedTooltip, setShowDeniedTooltip] = useState(false);
 	const [lockedNudge, setLockedNudge] = useState(null);
 	const videoRef = useRef(null);
+	const lastPosRef = useRef(null);
+
+	function haversineMeters(lat1, lon1, lat2, lon2) {
+		const R = 6371000;
+		const toRad = (d) => (d * Math.PI) / 180;
+		const dLat = toRad(lat2 - lat1);
+		const dLon = toRad(lon2 - lon1);
+		const a =
+			Math.sin(dLat / 2) ** 2 +
+			Math.cos(toRad(lat1)) *
+				Math.cos(toRad(lat2)) *
+				Math.sin(dLon / 2) ** 2;
+		return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+	}
+
+	function fetchGeoPosition() {
+		return new Promise((resolve, reject) => {
+			if (!navigator.geolocation) {
+				reject(new Error("Geolocation not supported"));
+				return;
+			}
+			navigator.geolocation.getCurrentPosition(resolve, reject, {
+				enableHighAccuracy: true,
+				maximumAge: 60000,
+				timeout: 20000,
+			});
+		});
+	}
 
 	async function enableLocation() {
 		setLocationStatus("loading");
@@ -26,6 +65,7 @@ export default function ScavengerPage({ artworks = [] }) {
 				})
 			);
 			const { latitude: lat, longitude: lon } = pos.coords;
+			lastPosRef.current = { lat, lon };
 			const res = await fetch(`/api/artworks/nearby?lat=${lat}&lon=${lon}`, { credentials: "include" });
 			if (res.ok) {
 				const nearby = await res.json();
@@ -75,6 +115,14 @@ export default function ScavengerPage({ artworks = [] }) {
 		refreshFindsAndStats();
 	}, [refreshFindsAndStats]);
 
+	useEffect(() => {
+		const socket = getSocket();
+		if (!socket) return;
+		const handler = async () => { await refreshFindsAndStats(); };
+		socket.on("image_processed", handler);
+		return () => { socket.off("image_processed", handler); };
+	}, [refreshFindsAndStats]);
+
 	// Attach stream to video element once camera modal is open
 	useEffect(() => {
 		if (cameraOpen && stream && videoRef.current && !capturedImage) {
@@ -115,6 +163,52 @@ export default function ScavengerPage({ artworks = [] }) {
 		setStream(null);
 	}
 
+	async function uploadPhoto() {
+		if (!capturedImage) return;
+		const blob = await fetch(capturedImage).then((r) => r.blob());
+		const formData = new FormData();
+		formData.append("image", blob, "photo.jpg");
+		const res = await fetch("/api/upload", { method: "POST", body: formData });
+		const data = await res.json();
+		handleVerifyUserSubmission(data.image_url);
+	}
+
+	async function handleVerifyUserSubmission(imageUrl) {
+		try {
+			let distToObject = 0;
+			try {
+				let userLat, userLon;
+				if (lastPosRef.current) {
+					userLat = lastPosRef.current.lat;
+					userLon = lastPosRef.current.lon;
+				} else {
+					const pos = await fetchGeoPosition();
+					userLat = pos.coords.latitude;
+					userLon = pos.coords.longitude;
+					lastPosRef.current = { lat: userLat, lon: userLon };
+				}
+				distToObject = haversineMeters(
+					userLat,
+					userLon,
+					Number(currLat),
+					Number(currLon),
+				);
+			} catch {
+				alert("Couldn't get your location. Enable location services and try again.");
+				return;
+			}
+			await fetch("/api/scavenger/find", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				credentials: "include",
+				body: JSON.stringify({ objectid: currObjectId, imageUrl, distToObject }),
+			});
+			await refreshFindsAndStats();
+		} catch (err) {
+			console.error("Failed to submit find:", err);
+		}
+	}
+
 	function closeCamera() {
 		if (stream) stream.getTracks().forEach((t) => t.stop());
 		setStream(null);
@@ -128,18 +222,23 @@ export default function ScavengerPage({ artworks = [] }) {
 	const score = stats?.total_score ?? 0;
 	const pct = total ? Math.round((foundCount / total) * 100) : 0;
 
-	// Sort: unlocked (nearby, not found) by distance → locked (not found) by title → found by title
 	const allNearbyFound =
 		locationStatus === "granted" &&
 		nearbyIds.size > 0 &&
-		[...nearbyIds].every((id) => findsMap.has(id));
+		[...nearbyIds].every((id) => {
+			const f = findsMap.get(id);
+			return f && f.verify_state === VERIFY_STATE.ACCEPTED;
+		});
 
+	// Sort: unlocked (nearby, not accepted) by distance → locked → accepted (found)
 	const sortedArtworks = (() => {
 		const unlocked = [];
 		const locked = [];
 		const foundList = [];
 		for (const art of artworks) {
-			if (findsMap.has(art.objectid)) {
+			const f = findsMap.get(art.objectid);
+			const verifyState = f ? f.verify_state : null;
+			if (verifyState === VERIFY_STATE.ACCEPTED) {
 				foundList.push(art);
 			} else if (nearbyIds.has(art.objectid)) {
 				unlocked.push(art);
@@ -175,9 +274,6 @@ export default function ScavengerPage({ artworks = [] }) {
 		);
 	}
 
-	const locationDeniedOrDismissed =
-		locationStatus === "denied" || locationStatus === "dismissed";
-
 	return (
 		<div className="page-container scav-page">
 			{/* Camera modal */}
@@ -210,7 +306,7 @@ export default function ScavengerPage({ artworks = [] }) {
 									</button>
 									<button
 										className="camera-confirm-btn"
-										onClick={closeCamera}
+										onClick={() => { uploadPhoto(); closeCamera(); }}
 									>
 										Confirm
 									</button>
@@ -314,10 +410,13 @@ export default function ScavengerPage({ artworks = [] }) {
 			{/* Artwork list */}
 			<div className="scav-list">
 				{sortedArtworks.map((art) => {
-					const found = findsMap.has(art.objectid);
-					const unlocked = nearbyIds.has(art.objectid);
+					const f = findsMap.get(art.objectid);
+					const verifyState = f ? f.verify_state : null;
+					const found = verifyState === VERIFY_STATE.ACCEPTED;
+					const unlocked = nearbyIds.has(art.objectid) && !found;
 					const locked = !found && !unlocked;
 					const distance = nearbyDistances.get(art.objectid);
+					const showCameraBtn = !found && unlocked;
 					const thumb = art.image_url
 						? `${art.image_url}/full/120,/0/default.jpg`
 						: null;
@@ -342,10 +441,12 @@ export default function ScavengerPage({ artworks = [] }) {
 								<span className="scav-card-title">
 									{art.title || "Untitled"}
 								</span>
-								<span
-									className={`scav-card-status${found ? " scav-status-found" : " scav-status-pending"}`}
-								>
-									{found ? "✓ Verified" : "Not found"}
+								<span className={`scav-status-pill scav-status-${verifyState ?? "none"}`}>
+									{verifyState === VERIFY_STATE.ACCEPTED        && "✓ Verified"}
+									{verifyState === VERIFY_STATE.PENDING         && "⏳ Pending review"}
+									{verifyState === VERIFY_STATE.FAILED_LOCATION && "📍 Too far — try again"}
+									{verifyState === VERIFY_STATE.FAILED_IMAGE    && "📷 Unclear photo — try again"}
+									{verifyState === null                         && "Not found"}
 								</span>
 								{locked && lockedNudge === art.objectid && (
 									<p className="scav-card-nudge">
@@ -355,11 +456,16 @@ export default function ScavengerPage({ artworks = [] }) {
 									</p>
 								)}
 							</div>
-							{!found && unlocked && (
+							{showCameraBtn && (
 								<div className="scav-card-actions">
 									<button
 										className="scav-camera-btn"
-										onClick={openCamera}
+										onClick={() => {
+											setCurrObjectId(art.objectid);
+											setCurrLat(art.lat);
+											setCurrLon(art.lon);
+											openCamera();
+										}}
 										aria-label="Take photo to verify"
 									>
 										📷

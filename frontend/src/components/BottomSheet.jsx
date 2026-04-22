@@ -114,9 +114,10 @@ export default function BottomSheet({
 						📍 Walk closer to reveal details.
 					</p>
 					<button
-						className="bs-directions-btn--outline"
+						className={`bs-directions-btn--outline${locationStatus !== "granted" ? " btn--location-disabled" : ""}`}
 						onClick={() => onFetchRoute(art)}
 						disabled={locationStatus !== "granted"}
+						aria-label={locationStatus !== "granted" ? "Enable location to get directions" : "Get directions"}
 					>
 						Get Directions
 					</button>
@@ -183,11 +184,18 @@ export default function BottomSheet({
 							{art.location || "Princeton University Campus"}
 						</p>
 						<button
-							className="bs-directions-btn"
+							className={`bs-directions-btn${locationStatus !== "granted" ? " btn--location-disabled" : ""}`}
 							onClick={() => onFetchRoute(art)}
+							disabled={locationStatus !== "granted"}
+							aria-label={locationStatus !== "granted" ? "Enable location to get directions" : "Get directions"}
 						>
 							Get Directions
 						</button>
+						{locationStatus === "denied" && (
+							<p className="bs-loc-denied-note" style={{ marginTop: 8 }}>
+								Enable location to use in-app directions.
+							</p>
+						)}
 					</div>
 
 					{/* About card */}
@@ -266,11 +274,18 @@ export default function BottomSheet({
 							{art.location || "Princeton University Campus"}
 						</p>
 						<button
-							className="bs-directions-btn"
+							className={`bs-directions-btn${locationStatus !== "granted" ? " btn--location-disabled" : ""}`}
 							onClick={() => onFetchRoute(art)}
+							disabled={locationStatus !== "granted"}
+							aria-label={locationStatus !== "granted" ? "Enable location to get directions" : "Get directions"}
 						>
 							Get Directions
 						</button>
+						{locationStatus === "denied" && (
+							<p className="bs-loc-denied-note" style={{ marginTop: 8 }}>
+								Enable location to use in-app directions.
+							</p>
+						)}
 					</div>
 
 					{/* About card */}
@@ -292,12 +307,13 @@ export default function BottomSheet({
 					{/* Action buttons */}
 					<div className="bs-actions">
 						<button
-							className={`bs-action-btn bs-action-visit${isFound ? " bs-action-found" : ""}`}
+							className={`bs-action-btn bs-action-visit${isFound ? " bs-action-found" : ""}${!isFound && locationStatus !== "granted" ? " btn--location-disabled" : ""}`}
 							onClick={() =>
-								!isFound && locationStatus !== "denied" && onVerify && onVerify(art)
+								!isFound && locationStatus === "granted" && onVerify && onVerify(art)
 							}
-							disabled={isFound || favoritesLoading || locationStatus === "denied"}
+							disabled={isFound || favoritesLoading || locationStatus !== "granted"}
 							style={favoritesLoading ? { opacity: 0.5 } : undefined}
+							aria-label={!isFound && locationStatus !== "granted" ? "Enable location to verify this artwork" : undefined}
 						>
 							{isFound ? "✅ Verified" : "📷 Take Photo to Verify"}
 						</button>

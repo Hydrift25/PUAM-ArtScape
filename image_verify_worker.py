@@ -24,6 +24,7 @@ VERIFY_MIN_SIM_SCORE = 0.5
 
 REF_EMBEDDINGS = {}
 
+# Load all reference embeddings into memory
 for file in Path('embeddings').iterdir():
     if file.is_file():
         match = re.search(r"(\d+)_emb\.pt", file.name)
@@ -32,7 +33,8 @@ for file in Path('embeddings').iterdir():
             REF_EMBEDDINGS[object_id] = torch.load(str(file))
 
 def load_model():
-    model, preprocess = clip.load("ViT-B/32", device=DEVICE)
+    model, preprocess = clip.load("RN50", device=DEVICE)
+    model.half()
     return model, preprocess
 
 # Generate image embedding from image
@@ -49,26 +51,25 @@ def cosine_similarity(a, b):
 def process_verify_job(verify_job, model, preprocess):
     user_id, objectid, image_url, dist_to_object = verify_job
 
-    if dist_to_object > VERIFY_MIN_DIST_M:
-        print(f"NOOOO LOC: {verify_job[0]} {verify_job[1]} {verify_job[2]} TOO FAR")
-        db.update_verify_state(user_id, objectid, IMG_FAILED_LOCATION)
-    else:
+    if dist_to_object <= VERIFY_MIN_DIST_M:
         response = requests.get(image_url)
         user_image = Image.open(BytesIO(response.content))
         user_embedding = get_embedding(user_image, model, preprocess)
 
-        # only works for oval with points!!
         if object_id in REF_EMBEDDINGS:
             sim_score = cosine_similarity(REF_EMBEDDINGS[object_id], user_embedding)
 
             if sim_score > VERIFY_MIN_SIM_SCORE:
-                print(f"HOORAY: {verify_job[0]} {verify_job[1]} {verify_job[2]} OK IMG!!")
+                print(f"HOORAY: {verify_job[0]} {verify_job[1]} {verify_job[2]} {dist_to_object} OK IMG, sim score={sim_score}!!")
                 db.update_verify_state(user_id, objectid, IMG_ACCEPTED)
             else:
-                print(f"NOOOO IMG: {verify_job[0]} {verify_job[1]} {verify_job[2]} BAD IMG")
+                print(f"NOOOO IMG: {verify_job[0]} {verify_job[1]} {verify_job[2]} {dist_to_object} BAD IMG, sim score={sim_score}")
                 db.update_verify_state(user_id, objectid, IMG_FAILED_IMAGE)
         else:
-            print(f"NOOOO OBJECT ID NOT FOUND: {verify_job[0]} {verify_job[1]} {verify_job[2]}")
+            print(f"NOOOO OBJECT ID NOT FOUND: {verify_job[0]} {verify_job[1]} {verify_job[2]} {dist_to_object}")
+    else:
+        print(f"NOOOO LOC: {verify_job[0]} {verify_job[1]} {verify_job[2]} {dist_to_object} TOO FAR")
+        db.update_verify_state(user_id, objectid, IMG_FAILED_LOCATION)
 
 
 def worker_loop(socketio):

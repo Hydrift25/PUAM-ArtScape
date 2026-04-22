@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { getSocket } from "../services/socket";
 
@@ -11,6 +12,8 @@ const VERIFY_STATE = {
 
 export default function ScavengerPage({ artworks = [] }) {
 	const { user, login } = useAuth();
+	const navigate = useNavigate();
+	const [searchParams] = useSearchParams();
 	const [finds, setFinds] = useState([]);
 	const [stats, setStats] = useState(null);
 	const [cameraOpen, setCameraOpen] = useState(false);
@@ -98,16 +101,19 @@ export default function ScavengerPage({ artworks = [] }) {
 	}, [lockedNudge]);
 
 	const refreshFindsAndStats = useCallback(async () => {
-		if (!user) return;
+		if (!user) return null;
 		try {
 			const [findsRes, statsRes] = await Promise.all([
 				fetch("/api/scavenger/finds", { credentials: "include" }),
 				fetch("/api/scavenger/stats", { credentials: "include" }),
 			]);
-			if (findsRes.ok) setFinds(await findsRes.json());
+			let updatedFinds = null;
+			if (findsRes.ok) { updatedFinds = await findsRes.json(); setFinds(updatedFinds); }
 			if (statsRes.ok) setStats(await statsRes.json());
+			return updatedFinds;
 		} catch (err) {
 			console.error("Failed to load scavenger data:", err);
+			return null;
 		}
 	}, [user]);
 
@@ -116,12 +122,25 @@ export default function ScavengerPage({ artworks = [] }) {
 	}, [refreshFindsAndStats]);
 
 	useEffect(() => {
+		const targetId = searchParams.get("objectid");
+		if (!targetId) return;
+		const el = document.querySelector(`[data-objectid="${targetId}"]`);
+		if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+	}, [searchParams]);
+
+	useEffect(() => {
 		const socket = getSocket();
 		if (!socket) return;
-		const handler = async () => { await refreshFindsAndStats(); };
+		const handler = async () => {
+			const updatedFinds = await refreshFindsAndStats();
+			const targetId = searchParams.get("objectid");
+			if (!targetId || !updatedFinds) return;
+			const match = updatedFinds.find((f) => f.objectid === parseInt(targetId));
+			if (match?.verify_state === VERIFY_STATE.ACCEPTED) navigate(-1);
+		};
 		socket.on("image_processed", handler);
 		return () => { socket.off("image_processed", handler); };
-	}, [refreshFindsAndStats]);
+	}, [refreshFindsAndStats, searchParams, navigate]);
 
 	// Attach stream to video element once camera modal is open
 	useEffect(() => {
@@ -423,6 +442,7 @@ export default function ScavengerPage({ artworks = [] }) {
 					return (
 						<div
 							key={art.objectid}
+							data-objectid={art.objectid}
 							className={`scav-card${found ? " scav-card-found" : ""}${locked ? " scav-card-locked" : ""}`}
 							onClick={locked ? () => setLockedNudge(art.objectid) : undefined}
 						>

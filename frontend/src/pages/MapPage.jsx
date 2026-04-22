@@ -14,7 +14,7 @@ import { useAuth } from "../context/AuthContext";
 import { getSocket } from "../services/socket";
 
 const FOUND_STORAGE_KEY = "artscape.foundIds";
-const VERIFY_RADIUS_M = 200;
+const VERIFY_STATE = { PENDING: 0, ACCEPTED: 1, FAILED_LOCATION: 2, FAILED_IMAGE: 3 };
 
 function CrosshairIcon() {
 	return (
@@ -106,7 +106,7 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 	);
 	const [sheetContent, setSheetContent] = useState(null);
 	const [sidebarOpen, setSidebarOpen] = useState(false);
-	const [foundIds, setFoundIds] = useState(new Set());
+	const [findsMap, setFindsMap] = useState(new Map());
 	const [favoritedIds, setFavoritedIds] = useState(new Set());
 	const [nearbyArtworks, setNearbyArtworks] = useState([]);
 	const [panelMinimized, setPanelMinimized] = useState(false);
@@ -219,8 +219,7 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 				]);
 				if (visitedRes.ok) {
 					const data = await visitedRes.json();
-					// API returns objects [{objectid, ...}] — extract ids for Set membership checks
-					setFoundIds(new Set((data ?? []).map((d) => d.objectid)));
+					setFindsMap(new Map((data ?? []).map((d) => [d.objectid, d.verify_state])));
 				}
 				if (favRes.ok) {
 					const data = await favRes.json();
@@ -236,8 +235,17 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 	}, []);
 
 	useEffect(() => {
-		localStorage.setItem(FOUND_STORAGE_KEY, JSON.stringify([...foundIds]));
-	}, [foundIds]);
+		const accepted = [...findsMap.entries()]
+			.filter(([, v]) => v === VERIFY_STATE.ACCEPTED)
+			.map(([k]) => k);
+		localStorage.setItem(FOUND_STORAGE_KEY, JSON.stringify(accepted));
+	}, [findsMap]);
+
+	const foundIds = new Set(
+		[...findsMap.entries()]
+			.filter(([, v]) => v === VERIFY_STATE.ACCEPTED)
+			.map(([k]) => k)
+	);
 
 	useEffect(() => {
 		const socket = getSocket();
@@ -246,7 +254,7 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 			const res = await fetch("/api/artworks/visited", { credentials: "include" });
 			if (res.ok) {
 				const data = await res.json();
-				setFoundIds(new Set((data ?? []).map((d) => d.objectid)));
+				setFindsMap(new Map((data ?? []).map((d) => [d.objectid, d.verify_state])));
 			}
 		};
 		socket.on("image_processed", handler);
@@ -273,67 +281,6 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 		} catch (err) {
 			console.error("Failed to update favorite:", err);
 			alert("Something went wrong. Please try again.");
-		}
-	}
-
-	async function markFound(objectid) {
-		if (!user) return;
-		try {
-			await fetch("/api/artworks/visited", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				credentials: "include",
-				body: JSON.stringify({ objectid }),
-			});
-			setFoundIds((prev) => {
-				if (prev.has(objectid)) return prev;
-				const next = new Set(prev);
-				next.add(objectid);
-				return next;
-			});
-		} catch (error) {
-			console.error("Failed to update visited artworks:", error);
-			alert("Something went wrong. Please try again.");
-		}
-	}
-
-	async function verifyArtwork(art) {
-		if (foundIds.has(art.objectid)) {
-			alert("You've already found this artwork!");
-			return;
-		}
-		try {
-			let userLat, userLon;
-			if (lastPosRef.current) {
-				userLat = lastPosRef.current.lat;
-				userLon = lastPosRef.current.lon;
-			} else {
-				const pos = await fetchGeoPosition();
-				userLat = pos.coords.latitude;
-				userLon = pos.coords.longitude;
-				lastPosRef.current = { lat: userLat, lon: userLon };
-			}
-			const dist = haversineMeters(
-				userLat,
-				userLon,
-				Number(art.lat),
-				Number(art.lon),
-			);
-			if (dist <= VERIFY_RADIUS_M) {
-				markFound(art.objectid);
-				alert(
-					`Found! You're ${Math.round(dist)} m from "${art.title || "this artwork"}".`,
-				);
-			} else {
-				alert(
-					`Too far — you're ${Math.round(dist)} m away. Get within ${VERIFY_RADIUS_M} m to verify.`,
-				);
-			}
-		} catch (e) {
-			console.error("Verify failed:", e);
-			alert(
-				"Couldn't get your location. Enable location services and try again.",
-			);
 		}
 	}
 
@@ -897,15 +844,10 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 				key={sheetContent?.art?.objectid}
 				content={sheetContent}
 				onClose={() => setSheetContent(null)}
-				onVerify={verifyArtwork}
 				onFetchRoute={fetchRoute}
 				onToggleFavorite={toggleFavorite}
 				navigationMode={!!navigationState}
-				isFound={
-					sheetContent?.art
-						? foundIds.has(sheetContent.art.objectid)
-						: false
-				}
+				verifyState={findsMap.get(sheetContent?.art?.objectid) ?? null}
 				isFavorited={
 					sheetContent?.art
 						? favoritedIds.has(sheetContent.art.objectid)

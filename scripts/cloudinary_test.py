@@ -10,4 +10,4 @@ print(os.getenv("CLOUDINARY_URL"))
 response = cloudinary.uploader.upload("ref_tigers.jpg")
 
 print(response)
-print(response["secure_url"])  # HTTPS URL of uploaded image
+print(response["secure_url"])

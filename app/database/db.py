@@ -10,6 +10,13 @@ db_url = os.getenv("DATABASE_URL")
 
 #-----------------------------------------------------------------------
 
+VERIFY_STATE_PENDING         = 0  # submitted, awaiting worker
+VERIFY_STATE_ACCEPTED        = 1  # accepted
+VERIFY_STATE_FAILED_LOCATION = 2  # too far from artwork
+VERIFY_STATE_FAILED_IMAGE    = 3  # image mismatch
+
+#-----------------------------------------------------------------------
+
 def get_all_artworks():
     """
     Returns artworks with location + metadata.
@@ -172,7 +179,7 @@ def get_favorites(user_id):
 
 def get_visited_artworks(user_id):
     query = """
-        SELECT s.objectid, g.lat, g.long, d.title, d.image_url, s.found_at
+        SELECT s.objectid, g.lat, g.long, d.title, d.image_url, s.found_at, s.verify_state
         FROM scavenger_hunt_finds s
         JOIN geo_prelim g ON s.objectid = g.objectid
         LEFT JOIN object_details d ON s.objectid = d.objectid
@@ -192,6 +199,7 @@ def get_visited_artworks(user_id):
             "title": r[3],
             "image_url": r[4],
             "found_at": r[5].isoformat() if r[5] else None,
+            "verify_state": r[6],
         }
         for r in rows
     ]
@@ -209,42 +217,29 @@ def update_visited_artwork(user_id, objectid):
             cur.execute(query, (user_id, objectid))
             conn.commit()
 
-# Inserts base find record for a (user_id, objectid) combo.
-# If there is already a record, this means that verification was
-# not sucessful, so update the photo URL to reflect the new
-# verification attempt.
-def record_find(user_id, objectid, user_photo_url):
+
+def record_find(user_id, objectid, photo_url):
+    # ON CONFLICT UPDATE allows re-submission when prior verification failed
     query = """
-        INSERT INTO scavenger_hunt_finds (user_id, objectid, photo_url, verified, verify_state)
-        VALUES (%s, %s, %s, FALSE, 0)
+        INSERT INTO scavenger_hunt_finds (user_id, objectid, photo_url, verify_state)
+        VALUES (%s, %s, %s, 0)
         ON CONFLICT (user_id, objectid)
         DO UPDATE SET
-        photo_url = EXCLUDED.photo_url,
-        verified = EXCLUDED.verified,
-        verify_state = EXCLUDED.verify_state;
+            photo_url = EXCLUDED.photo_url,
+            verify_state = EXCLUDED.verify_state;
     """
     with contextlib.closing(psycopg.connect(db_url)) as conn:
         with contextlib.closing(conn.cursor()) as cur:
-            cur.execute(query, (user_id, objectid, user_photo_url))
+            cur.execute(query, (user_id, objectid, photo_url))
             conn.commit()
 
 
 def update_verify_state(user_id, objectid, verify_state):
-    # TODO: Clean this up once we stop using verified
-    if verify_state == 1:
-        query = """
-            UPDATE scavenger_hunt_finds
-            SET verified = TRUE,
-            verify_state = %s
-            WHERE user_id = %s AND objectid = %s;
-        """
-    else:
-       query = """
-            UPDATE scavenger_hunt_finds
-            SET verified = FALSE,
-            verify_state = %s
-            WHERE user_id = %s AND objectid = %s;
-        """
+    query = """
+        UPDATE scavenger_hunt_finds
+        SET verify_state = %s
+        WHERE user_id = %s AND objectid = %s;
+    """
     with contextlib.closing(psycopg.connect(db_url)) as conn:
         with contextlib.closing(conn.cursor()) as cur:
             cur.execute(query, (verify_state, user_id, objectid))
@@ -255,7 +250,6 @@ def get_finds(user_id):
     query = """
         SELECT
             s.objectid,
-            s.verified,
             s.verify_state,
             s.found_at,
             d.title,
@@ -273,11 +267,10 @@ def get_finds(user_id):
     return [
         {
             "objectid": r[0],
-            "verified": r[1],
-            "verify_state": r[2],
-            "found_at": r[3].isoformat() if r[3] else None,
-            "title": r[4],
-            "image_url": r[5],
+            "verify_state": r[1],
+            "found_at": r[2].isoformat() if r[2] else None,
+            "title": r[3],
+            "image_url": r[4],
         }
         for r in rows
     ]
@@ -287,7 +280,7 @@ def get_scavenger_stats(user_id):
     query = """
         SELECT COUNT(*) AS total_finds
         FROM scavenger_hunt_finds
-        WHERE user_id = %s;
+        WHERE user_id = %s AND verify_state = 1;
     """
     with contextlib.closing(psycopg.connect(db_url)) as conn:
         with contextlib.closing(conn.cursor()) as cur:
@@ -312,7 +305,7 @@ def get_leaderboard(limit=20):
                 COUNT(s.objectid)           AS total_finds,
                 COUNT(s.objectid) * 10      AS score
             FROM users u
-            LEFT JOIN scavenger_hunt_finds s ON u.id = s.user_id
+            LEFT JOIN scavenger_hunt_finds s ON u.id = s.user_id AND s.verify_state = 1
             GROUP BY u.id, u.display_name, u.email
             HAVING COUNT(s.objectid) > 0
         )
@@ -355,7 +348,7 @@ def get_leaderboard_me(user_id):
                 COUNT(s.objectid)           AS total_finds,
                 COUNT(s.objectid) * 10      AS score
             FROM users u
-            LEFT JOIN scavenger_hunt_finds s ON u.id = s.user_id
+            LEFT JOIN scavenger_hunt_finds s ON u.id = s.user_id AND s.verify_state = 1
             GROUP BY u.id, u.display_name, u.email
             HAVING COUNT(s.objectid) > 0
         ),

@@ -1,40 +1,22 @@
 import { useState, useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 
-/*
-verifyState:
-0 = submitted, 1 = accepted,
-2 = failed due to location, 3 = failed due to image,
-4 = not submitted
-*/
-
-const VERIFY_LABELS = {
-	0: "Submitted for verification, in review",
-	1: "✅ Verified",
-	2: "📷 Take another Photo to Verify: please get closer to the artwork!",
-	3: "📷 Take another Photo to Verify: please take a clear picture of the artwork!",
-	4: "📷 Take Photo to Verify",
-};
+const VERIFY_STATE = { PENDING: 0, ACCEPTED: 1, FAILED_LOCATION: 2, FAILED_IMAGE: 3 };
 
 export default function BottomSheet({
 	content,
 	onClose,
-	onVerify,
 	onFetchRoute,
+	onToggleFavorite,
 	navigationMode = false,
-	verifyState,
+	verifyState = null,
 	isGuest,
 	favoritesLoading = false,
 	isFavorited = false,
 	locationStatus = "granted",
 }) {
-	const isFound = verifyState == 1 ? true : false;
+	const navigate = useNavigate();
 	const [visible, setVisible] = useState(false);
-	const [favorited, setFavorited] = useState(isFavorited);
-
-	// Sync if the sheet is open while favoritesLoading resolves
-	useEffect(() => {
-		setFavorited(isFavorited);
-	}, [isFavorited]);
 	const sheetRef = useRef(null);
 	const touchStartY = useRef(null);
 	const touchCurrentY = useRef(null);
@@ -106,24 +88,6 @@ export default function BottomSheet({
 		);
 	}
 
-	async function toggleFavorite() {
-		try {
-			const res = await fetch("/api/artworks/favorite", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				credentials: "include",
-				body: JSON.stringify({ objectid: art.objectid }),
-			});
-			if (res.ok) {
-				const data = await res.json();
-				setFavorited(data.favorited);
-			}
-		} catch (err) {
-			console.error("Failed to update favorite:", err);
-			alert("Something went wrong. Please try again.");
-		}
-	}
-
 	return (
 		<div
 			ref={sheetRef}
@@ -153,9 +117,10 @@ export default function BottomSheet({
 						📍 Walk closer to reveal details.
 					</p>
 					<button
-						className="bs-directions-btn--outline"
+						className={`bs-directions-btn--outline${locationStatus !== "granted" ? " btn--location-disabled" : ""}`}
 						onClick={() => onFetchRoute(art)}
 						disabled={locationStatus !== "granted"}
+						aria-label={locationStatus !== "granted" ? "Enable location to get directions" : "Get directions"}
 					>
 						Get Directions
 					</button>
@@ -222,11 +187,18 @@ export default function BottomSheet({
 							{art.location || "Princeton University Campus"}
 						</p>
 						<button
-							className="bs-directions-btn"
+							className={`bs-directions-btn${locationStatus !== "granted" ? " btn--location-disabled" : ""}`}
 							onClick={() => onFetchRoute(art)}
+							disabled={locationStatus !== "granted"}
+							aria-label={locationStatus !== "granted" ? "Enable location to get directions" : "Get directions"}
 						>
 							Get Directions
 						</button>
+						{locationStatus === "denied" && (
+							<p className="bs-loc-denied-note" style={{ marginTop: 8 }}>
+								Enable location to use in-app directions.
+							</p>
+						)}
 					</div>
 
 					{/* About card */}
@@ -269,13 +241,13 @@ export default function BottomSheet({
 							/>
 						)}
 						<button
-							className={`bs-fav-overlay-btn${favorited ? " favorited" : ""}`}
-							onClick={toggleFavorite}
-							aria-label={favorited ? "Unfavorite" : "Favorite"}
+							className={`bs-fav-overlay-btn${isFavorited ? " favorited" : ""}`}
+							onClick={() => onToggleFavorite(art.objectid)}
+							aria-label={isFavorited ? "Unfavorite" : "Favorite"}
 							disabled={favoritesLoading}
 							style={favoritesLoading ? { opacity: 0.5 } : undefined}
 						>
-							{favorited ? "❤️" : "🤍"}
+							{isFavorited ? "❤️" : "🤍"}
 						</button>
 					</div>
 
@@ -305,11 +277,18 @@ export default function BottomSheet({
 							{art.location || "Princeton University Campus"}
 						</p>
 						<button
-							className="bs-directions-btn"
+							className={`bs-directions-btn${locationStatus !== "granted" ? " btn--location-disabled" : ""}`}
 							onClick={() => onFetchRoute(art)}
+							disabled={locationStatus !== "granted"}
+							aria-label={locationStatus !== "granted" ? "Enable location to get directions" : "Get directions"}
 						>
 							Get Directions
 						</button>
+						{locationStatus === "denied" && (
+							<p className="bs-loc-denied-note" style={{ marginTop: 8 }}>
+								Enable location to use in-app directions.
+							</p>
+						)}
 					</div>
 
 					{/* About card */}
@@ -330,28 +309,38 @@ export default function BottomSheet({
 
 					{/* Action buttons */}
 					<div className="bs-actions">
+						{(() => {
+							const isAccepted = verifyState === VERIFY_STATE.ACCEPTED;
+							const isPending  = verifyState === VERIFY_STATE.PENDING;
+							const label =
+								isAccepted ? "✓ Visited" :
+								isPending  ? "⏳ Verifying..." :
+								verifyState === VERIFY_STATE.FAILED_LOCATION ? "📍 Retry — too far" :
+								verifyState === VERIFY_STATE.FAILED_IMAGE    ? "📷 Retry — unclear photo" :
+								"📷 Verify Visit";
+							const btnClass = `bs-action-btn bs-action-visit${
+								isAccepted ? " bs-action-found" :
+								isPending  ? " bs-action-pending" :
+								(verifyState === VERIFY_STATE.FAILED_LOCATION || verifyState === VERIFY_STATE.FAILED_IMAGE) ? " bs-action-retry" :
+								""
+							}`;
+							return (
+								<button
+									className={btnClass}
+									onClick={() => !isAccepted && !isPending && navigate(`/hunt?objectid=${art.objectid}`)}
+									disabled={isAccepted || isPending}
+								>
+									{label}
+								</button>
+							);
+						})()}
 						<button
-							className={`bs-action-btn bs-action-visit${isFound ? " bs-action-found" : ""}`}
-							onClick={() =>
-								!isFound && locationStatus !== "denied" && onVerify && onVerify(art)
-							}
-							disabled={isFound || favoritesLoading || locationStatus === "denied"}
-							style={favoritesLoading ? { opacity: 0.5 } : undefined}
-						>
-							{VERIFY_LABELS[verifyState] ?? "Unknown"}
-						</button>
-						{!isFound && locationStatus === "denied" && (
-							<p className="bs-loc-denied-note">
-								Enable location to confirm you&apos;re near this artwork before verifying.
-							</p>
-						)}
-						<button
-							className={`bs-action-btn${favorited ? " bs-action-unfav" : " bs-action-fav"}`}
-							onClick={toggleFavorite}
+							className={`bs-action-btn${isFavorited ? " bs-action-unfav" : " bs-action-fav"}`}
+							onClick={() => onToggleFavorite(art.objectid)}
 							disabled={favoritesLoading}
 							style={favoritesLoading ? { opacity: 0.5 } : undefined}
 						>
-							{favorited ? "💔 Unfavorite" : "❤️ Save to Favorites"}
+							{isFavorited ? "💔 Unfavorite" : "❤️ Save to Favorites"}
 						</button>
 					</div>
 				</div>

@@ -8,16 +8,54 @@ export default function ScavengerPage({ artworks = [] }) {
 	const [cameraOpen, setCameraOpen] = useState(false);
 	const [stream, setStream] = useState(null);
 	const [capturedImage, setCapturedImage] = useState(null);
-	const [locationGranted, setLocationGranted] = useState(false);
+	const [locationStatus, setLocationStatus] = useState("pending");
+	const [nearbyIds, setNearbyIds] = useState(new Set());
+	const [nearbyDistances, setNearbyDistances] = useState(new Map());
+	const [showDeniedTooltip, setShowDeniedTooltip] = useState(false);
+	const [lockedNudge, setLockedNudge] = useState(null);
 	const videoRef = useRef(null);
+
+	async function enableLocation() {
+		setLocationStatus("loading");
+		try {
+			const pos = await new Promise((resolve, reject) =>
+				navigator.geolocation.getCurrentPosition(resolve, reject, {
+					enableHighAccuracy: true,
+					maximumAge: 60000,
+					timeout: 20000,
+				})
+			);
+			const { latitude: lat, longitude: lon } = pos.coords;
+			const res = await fetch(`/api/artworks/nearby?lat=${lat}&lon=${lon}`, { credentials: "include" });
+			if (res.ok) {
+				const nearby = await res.json();
+				setNearbyIds(new Set(nearby.map((a) => a.objectid)));
+				setNearbyDistances(new Map(nearby.map((a) => [a.objectid, a.distance_m])));
+			}
+			setLocationStatus("granted");
+		} catch {
+			setLocationStatus("denied");
+		}
+	}
 
 	useEffect(() => {
 		if (!navigator.permissions) return;
 		navigator.permissions.query({ name: "geolocation" }).then((result) => {
-			setLocationGranted(result.state === "granted");
-			result.onchange = () => setLocationGranted(result.state === "granted");
+			if (result.state === "granted") {
+				enableLocation();
+			} else if (result.state === "denied") {
+				setLocationStatus("denied");
+			}
+			// "prompt" → leave as "pending"
 		}).catch(() => {});
-	}, []);
+	}, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+	// Auto-clear locked nudge after 2500ms
+	useEffect(() => {
+		if (lockedNudge == null) return;
+		const id = setTimeout(() => setLockedNudge(null), 2500);
+		return () => clearTimeout(id);
+	}, [lockedNudge]);
 
 	const refreshFindsAndStats = useCallback(async () => {
 		if (!user) return;
@@ -90,6 +128,35 @@ export default function ScavengerPage({ artworks = [] }) {
 	const score = stats?.total_score ?? 0;
 	const pct = total ? Math.round((foundCount / total) * 100) : 0;
 
+	// Sort: unlocked (nearby, not found) by distance → locked (not found) by title → found by title
+	const allNearbyFound =
+		locationStatus === "granted" &&
+		nearbyIds.size > 0 &&
+		[...nearbyIds].every((id) => findsMap.has(id));
+
+	const sortedArtworks = (() => {
+		const unlocked = [];
+		const locked = [];
+		const foundList = [];
+		for (const art of artworks) {
+			if (findsMap.has(art.objectid)) {
+				foundList.push(art);
+			} else if (nearbyIds.has(art.objectid)) {
+				unlocked.push(art);
+			} else {
+				locked.push(art);
+			}
+		}
+		unlocked.sort(
+			(a, b) =>
+				(nearbyDistances.get(a.objectid) ?? Infinity) -
+				(nearbyDistances.get(b.objectid) ?? Infinity),
+		);
+		locked.sort((a, b) => (a.title || "").localeCompare(b.title || ""));
+		foundList.sort((a, b) => (a.title || "").localeCompare(b.title || ""));
+		return [...unlocked, ...locked, ...foundList];
+	})();
+
 	if (!user) {
 		return (
 			<div className="page-container scav-page">
@@ -107,6 +174,9 @@ export default function ScavengerPage({ artworks = [] }) {
 			</div>
 		);
 	}
+
+	const locationDeniedOrDismissed =
+		locationStatus === "denied" || locationStatus === "dismissed";
 
 	return (
 		<div className="page-container scav-page">
@@ -165,6 +235,37 @@ export default function ScavengerPage({ artworks = [] }) {
 				</div>
 			)}
 
+			{/* Location banners */}
+			{(locationStatus === "pending" || locationStatus === "loading") && (
+				<div className="loc-banner loc-banner-prompt">
+					<span className="loc-banner-text">📍 Unlock the 3 artworks closest to you →</span>
+					<button
+						className="loc-banner-btn"
+						onClick={enableLocation}
+						disabled={locationStatus === "loading"}
+					>
+						{locationStatus === "loading" ? "Locating…" : "Enable Location"}
+					</button>
+				</div>
+			)}
+			{locationStatus === "denied" && (
+				<div className="loc-banner loc-banner-denied">
+					<span className="loc-banner-text">
+						📍 Location off · All artworks locked ·{" "}
+						<button className="loc-banner-link" onClick={() => setShowDeniedTooltip((v) => !v)}>
+							How to enable ↗
+						</button>
+					</span>
+					<button className="loc-banner-dismiss" onClick={() => setLocationStatus("dismissed")} aria-label="Dismiss">✕</button>
+					{showDeniedTooltip && (
+						<div className="loc-denied-tooltip">
+							<strong>Safari (iOS):</strong> Settings → Privacy &amp; Security → Location Services → Safari → Allow<br />
+							<strong>Chrome (Android):</strong> Settings → Site Settings → Location → Allow
+						</div>
+					)}
+				</div>
+			)}
+
 			{/* Header */}
 			<div className="page-header">
 				<h1 className="page-title">Scavenger Hunt</h1>
@@ -201,17 +302,30 @@ export default function ScavengerPage({ artworks = [] }) {
 				</div>
 			</div>
 
+			{/* All nearby found callout */}
+			{allNearbyFound && (
+				<div className="page-card scav-all-nearby-found">
+					<p className="scav-all-nearby-found-msg">
+						🎉 You've found everything nearby — keep exploring to unlock more!
+					</p>
+				</div>
+			)}
+
 			{/* Artwork list */}
 			<div className="scav-list">
-				{artworks.map((art) => {
+				{sortedArtworks.map((art) => {
 					const found = findsMap.has(art.objectid);
+					const unlocked = nearbyIds.has(art.objectid);
+					const locked = !found && !unlocked;
+					const distance = nearbyDistances.get(art.objectid);
 					const thumb = art.image_url
 						? `${art.image_url}/full/120,/0/default.jpg`
 						: null;
 					return (
 						<div
 							key={art.objectid}
-							className={`scav-card${found ? " scav-card-found" : ""}`}
+							className={`scav-card${found ? " scav-card-found" : ""}${locked ? " scav-card-locked" : ""}`}
+							onClick={locked ? () => setLockedNudge(art.objectid) : undefined}
 						>
 							<div className="scav-card-thumb-wrap">
 								{thumb ? (
@@ -233,14 +347,31 @@ export default function ScavengerPage({ artworks = [] }) {
 								>
 									{found ? "✓ Verified" : "Not found"}
 								</span>
+								{locked && lockedNudge === art.objectid && (
+									<p className="scav-card-nudge">
+										{distance != null
+											? `Walk closer to unlock · ${Math.round(distance)}m away`
+											: "Walk closer to unlock"}
+									</p>
+								)}
 							</div>
-							{!found && (
+							{!found && unlocked && (
 								<div className="scav-card-actions">
 									<button
-										className={`scav-camera-btn${!locationGranted ? " btn--location-disabled" : ""}`}
+										className="scav-camera-btn"
 										onClick={openCamera}
-										disabled={!locationGranted}
-										aria-label={!locationGranted ? "Enable location to verify this artwork" : "Take photo to verify"}
+										aria-label="Take photo to verify"
+									>
+										📷
+									</button>
+								</div>
+							)}
+							{locked && (
+								<div className="scav-card-actions">
+									<button
+										className="scav-camera-btn btn--location-disabled"
+										disabled
+										aria-label="Get closer to verify this artwork"
 									>
 										📷
 									</button>

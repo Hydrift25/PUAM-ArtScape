@@ -1380,6 +1380,29 @@ body:has(.map-container-guest) .nearest-panel {
     background: #eee;
 }
 
+.scav-card-locked {
+    opacity: 0.5;
+    cursor: pointer;
+}
+
+.scav-card-nudge {
+    margin: 6px 0 0;
+    font-size: 0.78rem;
+    color: #888;
+    font-style: italic;
+}
+
+.scav-all-nearby-found {
+    padding: 14px 18px;
+    text-align: center;
+}
+
+.scav-all-nearby-found-msg {
+    margin: 0;
+    font-size: 0.88rem;
+    color: #666;
+}
+
 .scav-guest-card {
     display: flex;
     flex-direction: column;

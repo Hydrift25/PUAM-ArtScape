@@ -12,7 +12,8 @@ import clip
 DEVICE = torch.device("cpu")
 
 # Load model
-model, preprocess = clip.load("ViT-B/32", device=DEVICE)
+model, preprocess = clip.load("RN50", device=DEVICE)
+model.half()
 
 # Output directory
 OUTPUT_DIR = "embeddings"

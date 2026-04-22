@@ -12,30 +12,73 @@ function getInitials(name) {
 		.toUpperCase();
 }
 
+function iiifImageUrl(base, width = 400) {
+	if (!base) return null;
+	const clean = base.replace(/\/$/, "");
+	return `${clean}/full/${width},/0/default.jpg`;
+}
+
+function ArtworkGallery({ artworks, emptyMessage }) {
+	if (!artworks.length) {
+		return <p className="profile-gallery-empty">{emptyMessage}</p>;
+	}
+	return (
+		<div className="profile-gallery">
+			{artworks.map((art) => {
+				const imgSrc = iiifImageUrl(art.image_url);
+				return (
+					<div key={art.objectid} className="profile-gallery-card">
+						{imgSrc ? (
+							<img
+								src={imgSrc}
+								alt={art.title || "Artwork"}
+								className="profile-gallery-img"
+								onError={(e) => {
+									e.target.style.display = "none";
+									e.target.nextSibling.style.display = "flex";
+								}}
+							/>
+						) : null}
+						<div
+							className="profile-gallery-img profile-gallery-img-placeholder"
+							style={{ display: imgSrc ? "none" : "flex" }}
+						>
+							🖼️
+						</div>
+						<p className="profile-gallery-title">
+							{art.title || "Untitled"}
+						</p>
+					</div>
+				);
+			})}
+		</div>
+	);
+}
+
 export default function ProfilePage() {
 	const { user, logout } = useAuth();
 	const navigate = useNavigate();
-	const [visitedCount, setVisitedCount] = useState(0);
-	const [favCount, setFavCount] = useState(0);
+	const [visited, setVisited] = useState([]);
+	const [favorites, setFavorites] = useState([]);
 	const [totalCount, setTotalCount] = useState(0);
+	const [showVisited, setShowVisited] = useState(false);
+	const [showFavorites, setShowFavorites] = useState(false);
 
 	useEffect(() => {
 		async function load() {
 			try {
 				const [visitedRes, favRes, allRes] = await Promise.all([
 					fetch("/api/artworks/visited", { credentials: "include" }),
-					fetch("/api/artworks/favorites", {
-						credentials: "include",
-					}),
+					fetch("/api/artworks/favorites", { credentials: "include" }),
 					fetch("/api/artworks"),
 				]);
 				if (visitedRes.ok) {
 					const v = await visitedRes.json();
-					setVisitedCount((v ?? []).length);
+					setVisited(v ?? []);
 				}
 				if (favRes.ok) {
 					const f = await favRes.json();
-					setFavCount((f ?? []).length);
+					setFavorites(f ?? []);
 				}
 				if (allRes.ok) {
 					const a = await allRes.json();
@@ -53,6 +96,8 @@ export default function ProfilePage() {
 		navigate("/");
 	}
 
+	const visitedCount = visited.length;
+	const favCount = favorites.length;
 	const initials = getInitials(user?.display_name);
 	const pct = totalCount ? Math.round((visitedCount / totalCount) * 100) : 0;
 
@@ -61,10 +106,7 @@ export default function ProfilePage() {
 			{/* Header */}
 			<div className="page-header profile-header-row">
 				<h1 className="page-title">Your Profile</h1>
-				<button
-					className="profile-logout-btn"
-					onClick={handleLogout}
-				>
+				<button className="profile-logout-btn" onClick={handleLogout}>
 					Log Out
 				</button>
 			</div>
@@ -116,14 +158,48 @@ export default function ProfilePage() {
 				<div className="profile-tile profile-tile-orange">
 					<span className="profile-tile-icon">📷</span>
 					<span className="profile-tile-label">Photos Captured</span>
-					<span className="profile-tile-value">0</span>
+					<span className="profile-tile-value">{visitedCount}</span>
+					<button
+						className="profile-tile-view-btn"
+						onClick={() => setShowVisited((s) => !s)}
+					>
+						{showVisited ? "Hide" : "View"}
+					</button>
 				</div>
 				<div className="profile-tile profile-tile-pink">
 					<span className="profile-tile-icon">❤️</span>
 					<span className="profile-tile-label">Favorites</span>
 					<span className="profile-tile-value">{favCount}</span>
+					<button
+						className="profile-tile-view-btn profile-tile-view-btn-pink"
+						onClick={() => setShowFavorites((s) => !s)}
+					>
+						{showFavorites ? "Hide" : "View"}
+					</button>
 				</div>
 			</div>
+
+			{/* Visited artworks gallery */}
+			{showVisited && (
+				<div className="page-card profile-gallery-card-wrapper">
+					<h3 className="profile-card-title">Visited Artworks</h3>
+					<ArtworkGallery
+						artworks={visited}
+						emptyMessage="No artworks visited yet. Start exploring!"
+					/>
+				</div>
+			)}
+
+			{/* Favorites gallery */}
+			{showFavorites && (
+				<div className="page-card profile-gallery-card-wrapper">
+					<h3 className="profile-card-title">Favorited Artworks</h3>
+					<ArtworkGallery
+						artworks={favorites}
+						emptyMessage="No favorites yet. Heart an artwork to save it here!"
+					/>
+				</div>
+			)}
 
 			{/* CTA */}
 			<div className="page-card profile-cta-card">

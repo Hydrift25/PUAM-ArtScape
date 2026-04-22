@@ -3,12 +3,13 @@ import react from '@vitejs/plugin-react'
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, process.cwd(), '');
+  const env = loadEnv(mode, new URL('..', import.meta.url).pathname, '');
   const my_port = env.B_PORT || 8000;
   const f_port = parseInt(env.F_PORT) || 3000;
 
   return {
     plugins: [react()],
+    envDir: '..',
 
     build: {
       outDir: "dist",

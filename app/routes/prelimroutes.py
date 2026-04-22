@@ -2,6 +2,7 @@ import os
 import flask
 from flask import send_from_directory, session, redirect, url_for
 from authlib.integrations.flask_client import OAuth
+from authlib.integrations.base_client.errors import OAuthError
 from flask_cors import CORS
 from flask_compress import Compress
 from app.database import db
@@ -154,7 +155,11 @@ def auth_login():
 
 @app.route("/api/auth/callback")
 def auth_callback():
-    token = oauth.google.authorize_access_token()
+    frontend_url = os.getenv("FRONTEND_URL", "/")
+    try:
+        token = oauth.google.authorize_access_token()
+    except OAuthError:
+        return redirect(frontend_url + "/?auth_cancelled=true")
     userinfo = token.get("userinfo", {})
     user = db.get_or_create_user(
         google_sub=userinfo.get("sub"),
@@ -163,7 +168,6 @@ def auth_callback():
         avatar_url=userinfo.get("picture"),
     )
     session["user"] = user
-    frontend_url = os.getenv("FRONTEND_URL", "/")
     return redirect(frontend_url)
 
 @app.route("/api/auth/logout")

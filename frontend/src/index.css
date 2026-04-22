@@ -231,6 +231,10 @@ body {
     margin: 0 0 24px 0;
 }
 
+.auth-card-subheading.auth-cancelled {
+    color: #c0392b;
+}
+
 .auth-btn-google {
     display: flex;
     align-items: center;
@@ -2364,6 +2368,13 @@ body:has(.map-container-guest) .nearest-panel {
 .bs-directions-btn--outline:disabled {
     opacity: 0.45;
     cursor: not-allowed;
+}
+
+/* Applied to any button that requires location when locationStatus !== 'granted' */
+.btn--location-disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    pointer-events: none;
 }
 
 /* ============================================================

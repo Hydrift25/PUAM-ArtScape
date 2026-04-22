@@ -21,6 +21,7 @@ function GoogleIcon() {
 
 export default function AuthPage() {
 	const { login, continueAsGuest } = useAuth();
+	const cancelled = new URLSearchParams(window.location.search).get("auth_cancelled") === "true";
 
 	return (
 		<div className="auth-page">
@@ -32,7 +33,10 @@ export default function AuthPage() {
 				<p className="auth-subtitle">There’s art around every corner. Start walking!</p>
 				<div className="auth-card">
 					<h2 className="auth-card-heading">Welcome</h2>
-					<p className="auth-card-subheading">Sign in to start your art exploration journey</p>
+					{cancelled
+						? <p className="auth-card-subheading auth-cancelled">Sign-in was cancelled. Try again?</p>
+						: <p className="auth-card-subheading">Sign in to start your art exploration journey</p>
+					}
 					<button className="auth-btn-google" onClick={login}>
 						<GoogleIcon />
 						Sign in with Google

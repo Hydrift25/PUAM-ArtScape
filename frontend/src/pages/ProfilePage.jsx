@@ -12,30 +12,72 @@ function getInitials(name) {
 		.toUpperCase();
 }
 
+function iiifImageUrl(base, width = 400) {
+	if (!base) return null;
+	const clean = base.replace(/\/$/, "");
+	return `${clean}/full/${width},/0/default.jpg`;
+}
+
+function ArtworkGallery({ artworks, emptyMessage }) {
+	if (!artworks.length) {
+		return <p className="profile-gallery-empty">{emptyMessage}</p>;
+	}
+	return (
+		<div className="profile-gallery">
+			{artworks.map((art) => {
+				const imgSrc = iiifImageUrl(art.image_url);
+				return (
+					<div key={art.objectid} className="profile-gallery-card">
+						{imgSrc ? (
+							<img
+								src={imgSrc}
+								alt={art.title || "Artwork"}
+								className="profile-gallery-img"
+								onError={(e) => {
+									e.target.style.display = "none";
+									e.target.nextSibling.style.display = "flex";
+								}}
+							/>
+						) : null}
+						<div
+							className="profile-gallery-img profile-gallery-img-placeholder"
+							style={{ display: imgSrc ? "none" : "flex" }}
+						>
+							🖼️
+						</div>
+						<p className="profile-gallery-title">
+							{art.title || "Untitled"}
+						</p>
+					</div>
+				);
+			})}
+		</div>
+	);
+}
+
 export default function ProfilePage() {
 	const { user, logout } = useAuth();
 	const navigate = useNavigate();
-	const [visitedCount, setVisitedCount] = useState(0);
-	const [favCount, setFavCount] = useState(0);
+	const [visited, setVisited] = useState([]);
+	const [favorites, setFavorites] = useState([]);
 	const [totalCount, setTotalCount] = useState(0);
+	const [activeTab, setActiveTab] = useState("found");
 
 	useEffect(() => {
 		async function load() {
 			try {
 				const [visitedRes, favRes, allRes] = await Promise.all([
 					fetch("/api/artworks/visited", { credentials: "include" }),
-					fetch("/api/artworks/favorites", {
-						credentials: "include",
-					}),
+					fetch("/api/artworks/favorites", { credentials: "include" }),
 					fetch("/api/artworks"),
 				]);
 				if (visitedRes.ok) {
 					const v = await visitedRes.json();
-					setVisitedCount((v ?? []).length);
+					setVisited(v ?? []);
 				}
 				if (favRes.ok) {
 					const f = await favRes.json();
-					setFavCount((f ?? []).length);
+					setFavorites(f ?? []);
 				}
 				if (allRes.ok) {
 					const a = await allRes.json();
@@ -53,8 +95,11 @@ export default function ProfilePage() {
 		navigate("/");
 	}
 
+	const visitedCount = visited.length;
+	const verifiedCount = visited.filter((v) => v.verify_state === 1).length;
+	const favCount = favorites.length;
 	const initials = getInitials(user?.display_name);
-	const pct = totalCount ? Math.round((visitedCount / totalCount) * 100) : 0;
+	const pct = totalCount ? Math.round((verifiedCount / totalCount) * 100) : 0;
 
 	return (
 		<div className="page-container profile-page">
@@ -83,9 +128,9 @@ export default function ProfilePage() {
 					</div>
 					<div className="profile-stat">
 						<span className="profile-stat-value">
-							{visitedCount}
+							{verifiedCount}
 						</span>
-						<span className="profile-stat-label">Visited</span>
+						<span className="profile-stat-label">Found</span>
 					</div>
 					<div className="profile-stat">
 						<span className="profile-stat-value">{favCount}</span>
@@ -104,25 +149,46 @@ export default function ProfilePage() {
 					/>
 				</div>
 				<p className="profile-progress-label">
-					Artworks Found: {visitedCount}/{totalCount}
+					Artworks Found: {verifiedCount}/{totalCount}
 				</p>
 				<p className="profile-progress-sub">
 					Keep exploring to complete your collection!
 				</p>
 			</div>
 
-			{/* Stat tiles */}
+			{/* Stat tiles — act as tab triggers */}
 			<div className="profile-tiles">
-				<div className="profile-tile profile-tile-orange">
+				<div
+					className={`profile-tile profile-tile-orange ${activeTab === "found" ? "profile-tile--active profile-tile--active-orange" : "profile-tile--inactive"}`}
+					onClick={() => setActiveTab("found")}
+				>
 					<span className="profile-tile-icon">📷</span>
-					<span className="profile-tile-label">Photos Captured</span>
-					<span className="profile-tile-value">0</span>
+					<span className="profile-tile-label">Visited</span>
+					<span className="profile-tile-value">{verifiedCount}</span>
 				</div>
-				<div className="profile-tile profile-tile-pink">
+				<div
+					className={`profile-tile profile-tile-pink ${activeTab === "favorited" ? "profile-tile--active profile-tile--active-pink" : "profile-tile--inactive"}`}
+					onClick={() => setActiveTab("favorited")}
+				>
 					<span className="profile-tile-icon">❤️</span>
 					<span className="profile-tile-label">Favorites</span>
 					<span className="profile-tile-value">{favCount}</span>
 				</div>
+			</div>
+
+			{/* Gallery card — flush below active tile */}
+			<div className={`page-card profile-gallery-wrapper profile-gallery-wrapper--${activeTab}`}>
+				{activeTab === "found" ? (
+					<ArtworkGallery
+						artworks={visited.filter((v) => v.verify_state === 1)}
+						emptyMessage="No artworks verified yet — start exploring!"
+					/>
+				) : (
+					<ArtworkGallery
+						artworks={favorites}
+						emptyMessage="No favorites yet. Heart an artwork to save it here!"
+					/>
+				)}
 			</div>
 
 			{/* CTA */}

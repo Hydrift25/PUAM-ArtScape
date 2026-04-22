@@ -125,12 +125,8 @@ function AppContent() {
 
 	useEffect(() => {
 		if (!user?.id) return;
-
-		const socket = initSocket(user.id);
-
-		return () => {
-			disconnectSocket();
-		};
+		initSocket(user.id);
+		return () => { disconnectSocket(); };
 	}, [user?.id]);
 
 	const location = useLocation();

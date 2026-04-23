@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { getSocket } from "../services/socket";
 
@@ -11,8 +12,9 @@ const VERIFY_STATE = {
 
 const DEV_BYPASS_LOCATION = import.meta.env.VITE_DEV_BYPASS_LOCATION === "true";
 
-export default function ScavengerPage({ artworks = [] }) {
+export default function ScavengerPage({ artworks = [], userLocation = null }) {
 	const { user, login } = useAuth();
+	const navigate = useNavigate();
 	const [finds, setFinds] = useState([]);
 	const [stats, setStats] = useState(null);
 	const [cameraOpen, setCameraOpen] = useState(false);
@@ -31,7 +33,7 @@ export default function ScavengerPage({ artworks = [] }) {
 	const [showDeniedTooltip, setShowDeniedTooltip] = useState(false);
 	const [lockedNudge, setLockedNudge] = useState(null);
 	const videoRef = useRef(null);
-	const lastPosRef = useRef(null);
+	const nearbyFetchedRef = useRef(false);
 
 	function haversineMeters(lat1, lon1, lat2, lon2) {
 		const R = 6371000;
@@ -46,65 +48,19 @@ export default function ScavengerPage({ artworks = [] }) {
 		return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 	}
 
-	function fetchGeoPosition() {
-		return new Promise((resolve, reject) => {
-			if (!navigator.geolocation) {
-				reject(new Error("Geolocation not supported"));
-				return;
-			}
-			navigator.geolocation.getCurrentPosition(resolve, reject, {
-				enableHighAccuracy: true,
-				maximumAge: 60000,
-				timeout: 20000,
-			});
-		});
-	}
-
-	async function enableLocation(silent = false) {
-		if (!silent) setLocationStatus("loading");
-		try {
-			const pos = await new Promise((resolve, reject) =>
-				navigator.geolocation.getCurrentPosition(resolve, reject, {
-					enableHighAccuracy: true,
-					maximumAge: 60000,
-					timeout: 20000,
-				})
-			);
-			const { latitude: lat, longitude: lon } = pos.coords;
-			lastPosRef.current = { lat, lon };
-			const res = await fetch(`/api/artworks/nearby?lat=${lat}&lon=${lon}`, { credentials: "include" });
-			if (res.ok) {
-				const nearby = await res.json();
+	useEffect(() => {
+		if (!userLocation || nearbyFetchedRef.current) return;
+		nearbyFetchedRef.current = true;
+		const { lat, lon } = userLocation;
+		setLocationStatus("granted");
+		fetch(`/api/artworks/nearby?lat=${lat}&lon=${lon}`, { credentials: "include" })
+			.then((res) => (res.ok ? res.json() : []))
+			.then((nearby) => {
 				setNearbyIds(new Set(nearby.map((a) => a.objectid)));
 				setNearbyDistances(new Map(nearby.map((a) => [a.objectid, a.distance_m])));
-			}
-			setLocationStatus("granted");
-			sessionStorage.setItem("artscape.locationStatus", "granted");
-		} catch {
-			setLocationStatus("denied");
-			sessionStorage.setItem("artscape.locationStatus", "denied");
-		}
-	}
-
-	useEffect(() => {
-		// If MapPage already resolved location this session, skip the loading flash.
-		// Still call enableLocation to populate nearbyIds, but silently.
-		const cached = sessionStorage.getItem("artscape.locationStatus");
-		if (cached === "granted") {
-			enableLocation(true);
-			return;
-		}
-		if (!navigator.permissions) return;
-		navigator.permissions.query({ name: "geolocation" }).then((result) => {
-			if (result.state === "granted") {
-				enableLocation();
-			} else if (result.state === "denied") {
-				setLocationStatus("denied");
-				sessionStorage.setItem("artscape.locationStatus", "denied");
-			}
-			// "prompt" → leave as "pending"
-		}).catch(() => {});
-	}, []); // eslint-disable-line react-hooks/exhaustive-deps
+			})
+			.catch(() => {});
+	}, [userLocation]); // eslint-disable-line react-hooks/exhaustive-deps
 
 	// Auto-clear locked nudge after 2500ms
 	useEffect(() => {
@@ -198,29 +154,17 @@ export default function ScavengerPage({ artworks = [] }) {
 	}
 
 	async function handleVerifyUserSubmission(imageUrl) {
+		if (!userLocation) {
+			alert("Couldn't get your location. Enable location services and try again.");
+			return;
+		}
+		const distToObject = haversineMeters(
+			userLocation.lat,
+			userLocation.lon,
+			Number(currLat),
+			Number(currLon),
+		);
 		try {
-			let distToObject = 0;
-			try {
-				let userLat, userLon;
-				if (lastPosRef.current) {
-					userLat = lastPosRef.current.lat;
-					userLon = lastPosRef.current.lon;
-				} else {
-					const pos = await fetchGeoPosition();
-					userLat = pos.coords.latitude;
-					userLon = pos.coords.longitude;
-					lastPosRef.current = { lat: userLat, lon: userLon };
-				}
-				distToObject = haversineMeters(
-					userLat,
-					userLon,
-					Number(currLat),
-					Number(currLon),
-				);
-			} catch {
-				alert("Couldn't get your location. Enable location services and try again.");
-				return;
-			}
 			await fetch("/api/scavenger/find", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
@@ -373,10 +317,9 @@ export default function ScavengerPage({ artworks = [] }) {
 					<span className="loc-banner-text">📍 Unlock the 3 artworks closest to you →</span>
 					<button
 						className="loc-banner-btn"
-						onClick={enableLocation}
-						disabled={locationStatus === "loading"}
+						onClick={() => navigate("/")}
 					>
-						{locationStatus === "loading" ? "Locating…" : "Enable Location"}
+						Enable Location
 					</button>
 				</div>
 			)}

@@ -9,6 +9,7 @@ import clip
 DEVICE = torch.device("cpu")
 
 model, preprocess = clip.load("RN50", device=DEVICE)
+
 model.half()
 
 OUTPUT_DIR = "embeddings"

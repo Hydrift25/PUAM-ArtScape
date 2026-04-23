@@ -189,20 +189,7 @@ function AppContent() {
 				<div
 					role="status"
 					aria-live="polite"
-					style={{
-						position: "fixed",
-						top: 60,
-						left: "50%",
-						transform: "translateX(-50%)",
-						zIndex: 150,
-						padding: "6px 14px",
-						borderRadius: 999,
-						fontSize: 13,
-						fontWeight: 500,
-						background: socketStatus === "failed" ? "#c33" : "#555",
-						color: "#fff",
-						boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
-					}}
+					className={`socket-banner${socketStatus === "failed" ? " socket-banner--failed" : ""}`}
 				>
 					{socketStatus === "failed" ? "Connection lost — refresh to retry" : "Reconnecting…"}
 				</div>

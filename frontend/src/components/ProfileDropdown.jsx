@@ -183,7 +183,11 @@ export default function ProfileDropdown({ user, onLogout }) {
 							<button className="pd-modal-close" onClick={() => setShowAbout(false)}>✕</button>
 						</div>
 						<p className="pd-modal-body">
-							Princeton ArtScape lets you explore public artworks across the Princeton University campus. Browse an interactive map, get walking directions to any piece, and complete a scavenger hunt by visiting and photographing artworks in person.
+							Princeton ArtScape lets you explore 
+							artworks across the Princeton University campus. 
+							Browse an interactive map, get walking directions 
+							to any artwork, and compete against others in a scavenger hunt 
+							by hunting down and taking photos of pieces across campus!
 						</p>
 					</div>
 				</div>
@@ -197,7 +201,11 @@ export default function ProfileDropdown({ user, onLogout }) {
 							<button className="pd-modal-close" onClick={() => setShowHelp(false)}>✕</button>
 						</div>
 						<p className="pd-modal-body">
-							Tap any marker on the map to see artwork details. Walk within 200 m of a piece and tap <strong>Verify Visit</strong> to mark it found. In the Scavenger Hunt tab, unlock nearby artworks and snap a photo for extra verification.
+							Tap any marker on the map to see artwork details. 
+							Walk within 200 m of a piece and tap
+							<strong> Verify Visit</strong> to mark it as found. 
+							In the Scavenger Hunt tab, navigate to nearby artworks 
+							and snap a photo for verification that you found them!
 						</p>
 					</div>
 				</div>

@@ -766,7 +766,12 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 						duration: 700,
 						essential: true,
 					});
-					setSheetContent({ art, type: "detailed" });
+					const showDetailed =
+						isGuest ||
+						locationStatus === "denied" ||
+						DEV_BYPASS_LOCATION ||
+						nearbyArtworks.some((a) => a.objectid === art.objectid);
+					setSheetContent({ art, type: showDetailed ? "detailed" : "succinct" });
 				}}
 			/>
 			<div className="map-controls">

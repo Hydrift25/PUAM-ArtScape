@@ -8,11 +8,15 @@ from io import BytesIO
 import requests
 from pathlib import Path
 import re
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
 
 DEVICE = torch.device("cpu")
 
-VERIFY_MIN_DIST_M = 200
-VERIFY_MIN_SIM_SCORE = 0.5
+VERIFY_MIN_DIST_M = os.getenv("VERIFY_MIN_DIST_M", 200)
+VERIFY_MIN_SIM_SCORE = os.getenv("VERIFY_MIN_SIM_SCORE", 0.5)
 
 REF_EMBEDDINGS = {}
 

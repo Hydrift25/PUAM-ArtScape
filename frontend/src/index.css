@@ -2899,3 +2899,22 @@ body:has(.map-container-guest) .nearest-panel {
     background: white;
     z-index: 498;
 }
+
+.socket-banner {
+    position: fixed;
+    top: 124px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 150;
+    padding: 6px 14px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 500;
+    background: #555;
+    color: #fff;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.socket-banner--failed {
+    background: #c33;
+}

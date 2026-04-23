@@ -41,6 +41,9 @@ def handle_connect(auth):
     user_id = auth.get("user_id") if auth else None
     if not user_id:
         return False
+    session_user = session.get("user")
+    if not session_user or session_user.get("id") != user_id:
+        return False
     join_room(f"user_{user_id}")
 
 #-----------------------------------------------------------------------
@@ -131,6 +134,8 @@ def scavenger_find():
 
 @app.route("/api/upload", methods=["POST"])
 def upload():
+    if not session.get("user"):
+        return flask.jsonify({"error": "Not logged in"}), 401
     file = flask.request.files.get("image")
     if not file:
         return flask.jsonify({"error": "No file"}), 400

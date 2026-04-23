@@ -17,6 +17,8 @@ function ExitIcon() {
 
 export default function ProfileDropdown({ user, onLogout }) {
 	const [isOpen, setIsOpen] = useState(false);
+	const [showAbout, setShowAbout] = useState(false);
+	const [showHelp, setShowHelp] = useState(false);
 	const containerRef = useRef(null);
 	const triggerRef = useRef(null);
 	const popoverRef = useRef(null);
@@ -142,23 +144,22 @@ export default function ProfileDropdown({ user, onLogout }) {
 
 					<hr className="profile-dropdown-divider" />
 
-					{/* Placeholder rows — non-interactive, future features */}
-					<div
-						className="profile-dropdown-placeholder-row"
+					<button
+						className="profile-dropdown-menu-btn"
+						onClick={() => { setIsOpen(false); setShowAbout(true); }}
 						role="menuitem"
-						aria-disabled="true"
 					>
-						<span className="profile-dropdown-placeholder-label">Profile</span>
-						<span className="profile-dropdown-placeholder-soon">coming soon</span>
-					</div>
-					<div
-						className="profile-dropdown-placeholder-row"
+						<span className="profile-dropdown-menu-icon">ℹ</span>
+						About
+					</button>
+					<button
+						className="profile-dropdown-menu-btn"
+						onClick={() => { setIsOpen(false); setShowHelp(true); }}
 						role="menuitem"
-						aria-disabled="true"
 					>
-						<span className="profile-dropdown-placeholder-label">Settings</span>
-						<span className="profile-dropdown-placeholder-soon">coming soon</span>
-					</div>
+						<span className="profile-dropdown-menu-icon">?</span>
+						Help
+					</button>
 
 					<hr className="profile-dropdown-divider" />
 
@@ -171,6 +172,42 @@ export default function ProfileDropdown({ user, onLogout }) {
 						<ExitIcon />
 						Sign Out
 					</button>
+				</div>
+			)}
+
+			{showAbout && (
+				<div className="pd-modal-overlay" onClick={() => setShowAbout(false)}>
+					<div className="pd-modal" onClick={(e) => e.stopPropagation()}>
+						<div className="pd-modal-header">
+							<h2 className="pd-modal-title">About ArtScape</h2>
+							<button className="pd-modal-close" onClick={() => setShowAbout(false)}>✕</button>
+						</div>
+						<p className="pd-modal-body">
+							Princeton ArtScape lets you explore 
+							artworks across the Princeton University campus. 
+							Browse an interactive map, get walking directions 
+							to any artwork, and compete against others in a scavenger hunt 
+							by hunting down and taking photos of pieces across campus!
+						</p>
+					</div>
+				</div>
+			)}
+
+			{showHelp && (
+				<div className="pd-modal-overlay" onClick={() => setShowHelp(false)}>
+					<div className="pd-modal" onClick={(e) => e.stopPropagation()}>
+						<div className="pd-modal-header">
+							<h2 className="pd-modal-title">Help</h2>
+							<button className="pd-modal-close" onClick={() => setShowHelp(false)}>✕</button>
+						</div>
+						<p className="pd-modal-body">
+							Tap any marker on the map to see artwork details. 
+							Walk within 200 m of a piece and tap
+							<strong> Verify Visit</strong> to mark it as found. 
+							In the Scavenger Hunt tab, navigate to nearby artworks 
+							and snap a photo for verification that you found them!
+						</p>
+					</div>
 				</div>
 			)}
 		</div>

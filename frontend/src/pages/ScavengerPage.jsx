@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { getSocket } from "../services/socket";
 
@@ -12,10 +12,9 @@ const VERIFY_STATE = {
 
 const DEV_BYPASS_LOCATION = import.meta.env.VITE_DEV_BYPASS_LOCATION === "true";
 
-export default function ScavengerPage({ artworks = [] }) {
+export default function ScavengerPage({ artworks = [], userLocation = null }) {
 	const { user, login } = useAuth();
 	const navigate = useNavigate();
-	const [searchParams] = useSearchParams();
 	const [finds, setFinds] = useState([]);
 	const [stats, setStats] = useState(null);
 	const [cameraOpen, setCameraOpen] = useState(false);
@@ -24,13 +23,17 @@ export default function ScavengerPage({ artworks = [] }) {
 	const [currObjectId, setCurrObjectId] = useState(null);
 	const [currLat, setCurrLat] = useState(null);
 	const [currLon, setCurrLon] = useState(null);
-	const [locationStatus, setLocationStatus] = useState("pending");
+	const [locationStatus, setLocationStatus] = useState(
+		() => sessionStorage.getItem("artscape.locationStatus") ?? "pending",
+	);
+	const [showCameraError, setShowCameraError] = useState(false);
+	const [cameraErrorPermanent, setCameraErrorPermanent] = useState(false);
 	const [nearbyIds, setNearbyIds] = useState(new Set());
 	const [nearbyDistances, setNearbyDistances] = useState(new Map());
 	const [showDeniedTooltip, setShowDeniedTooltip] = useState(false);
 	const [lockedNudge, setLockedNudge] = useState(null);
 	const videoRef = useRef(null);
-	const lastPosRef = useRef(null);
+	const nearbyFetchedRef = useRef(false);
 
 	function haversineMeters(lat1, lon1, lat2, lon2) {
 		const R = 6371000;
@@ -45,55 +48,19 @@ export default function ScavengerPage({ artworks = [] }) {
 		return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 	}
 
-	function fetchGeoPosition() {
-		return new Promise((resolve, reject) => {
-			if (!navigator.geolocation) {
-				reject(new Error("Geolocation not supported"));
-				return;
-			}
-			navigator.geolocation.getCurrentPosition(resolve, reject, {
-				enableHighAccuracy: true,
-				maximumAge: 60000,
-				timeout: 20000,
-			});
-		});
-	}
-
-	async function enableLocation() {
-		setLocationStatus("loading");
-		try {
-			const pos = await new Promise((resolve, reject) =>
-				navigator.geolocation.getCurrentPosition(resolve, reject, {
-					enableHighAccuracy: true,
-					maximumAge: 60000,
-					timeout: 20000,
-				})
-			);
-			const { latitude: lat, longitude: lon } = pos.coords;
-			lastPosRef.current = { lat, lon };
-			const res = await fetch(`/api/artworks/nearby?lat=${lat}&lon=${lon}`, { credentials: "include" });
-			if (res.ok) {
-				const nearby = await res.json();
+	useEffect(() => {
+		if (!userLocation || nearbyFetchedRef.current) return;
+		nearbyFetchedRef.current = true;
+		const { lat, lon } = userLocation;
+		setLocationStatus("granted");
+		fetch(`/api/artworks/nearby?lat=${lat}&lon=${lon}`, { credentials: "include" })
+			.then((res) => (res.ok ? res.json() : []))
+			.then((nearby) => {
 				setNearbyIds(new Set(nearby.map((a) => a.objectid)));
 				setNearbyDistances(new Map(nearby.map((a) => [a.objectid, a.distance_m])));
-			}
-			setLocationStatus("granted");
-		} catch {
-			setLocationStatus("denied");
-		}
-	}
-
-	useEffect(() => {
-		if (!navigator.permissions) return;
-		navigator.permissions.query({ name: "geolocation" }).then((result) => {
-			if (result.state === "granted") {
-				enableLocation();
-			} else if (result.state === "denied") {
-				setLocationStatus("denied");
-			}
-			// "prompt" → leave as "pending"
-		}).catch(() => {});
-	}, []); // eslint-disable-line react-hooks/exhaustive-deps
+			})
+			.catch(() => {});
+	}, [userLocation]); // eslint-disable-line react-hooks/exhaustive-deps
 
 	// Auto-clear locked nudge after 2500ms
 	useEffect(() => {
@@ -124,25 +91,12 @@ export default function ScavengerPage({ artworks = [] }) {
 	}, [refreshFindsAndStats]);
 
 	useEffect(() => {
-		const targetId = searchParams.get("objectid");
-		if (!targetId) return;
-		const el = document.querySelector(`[data-objectid="${targetId}"]`);
-		if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
-	}, [searchParams]);
-
-	useEffect(() => {
 		const socket = getSocket();
 		if (!socket) return;
-		const handler = async () => {
-			const updatedFinds = await refreshFindsAndStats();
-			const targetId = searchParams.get("objectid");
-			if (!targetId || !updatedFinds) return;
-			const match = updatedFinds.find((f) => f.objectid === parseInt(targetId));
-			if (match?.verify_state === VERIFY_STATE.ACCEPTED) navigate(-1);
-		};
+		const handler = () => { refreshFindsAndStats(); };
 		socket.on("image_processed", handler);
 		return () => { socket.off("image_processed", handler); };
-	}, [refreshFindsAndStats, searchParams, navigate]);
+	}, [refreshFindsAndStats]);
 
 	// Attach stream to video element once camera modal is open
 	useEffect(() => {
@@ -167,9 +121,14 @@ export default function ScavengerPage({ artworks = [] }) {
 			setCapturedImage(null);
 			setCameraOpen(true);
 		} catch {
-			alert(
-				"Camera permission denied. Please allow camera access to capture artworks.",
-			);
+			let permanent = false;
+			try {
+				const perm = await navigator.permissions.query({ name: "camera" });
+				permanent = perm.state === "denied";
+			} catch {}
+			setCameraErrorPermanent(permanent);
+			setShowCameraError(true);
+			setTimeout(() => setShowCameraError(false), 3000);
 		}
 	}
 
@@ -195,29 +154,17 @@ export default function ScavengerPage({ artworks = [] }) {
 	}
 
 	async function handleVerifyUserSubmission(imageUrl) {
+		if (!userLocation) {
+			alert("Couldn't get your location. Enable location services and try again.");
+			return;
+		}
+		const distToObject = haversineMeters(
+			userLocation.lat,
+			userLocation.lon,
+			Number(currLat),
+			Number(currLon),
+		);
 		try {
-			let distToObject = 0;
-			try {
-				let userLat, userLon;
-				if (lastPosRef.current) {
-					userLat = lastPosRef.current.lat;
-					userLon = lastPosRef.current.lon;
-				} else {
-					const pos = await fetchGeoPosition();
-					userLat = pos.coords.latitude;
-					userLon = pos.coords.longitude;
-					lastPosRef.current = { lat: userLat, lon: userLon };
-				}
-				distToObject = haversineMeters(
-					userLat,
-					userLon,
-					Number(currLat),
-					Number(currLon),
-				);
-			} catch {
-				alert("Couldn't get your location. Enable location services and try again.");
-				return;
-			}
 			await fetch("/api/scavenger/find", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
@@ -352,16 +299,27 @@ export default function ScavengerPage({ artworks = [] }) {
 				</div>
 			)}
 
+			{/* Camera permission error toast */}
+			{showCameraError && (
+				<div className="scav-camera-error-toast">
+					Camera access denied — please allow camera access to capture artworks.
+					{cameraErrorPermanent && (
+						<span className="scav-camera-error-hint">
+							Enable camera access in your browser settings to verify finds.
+						</span>
+					)}
+				</div>
+			)}
+
 			{/* Location banners */}
 			{(locationStatus === "pending" || locationStatus === "loading") && (
 				<div className="loc-banner loc-banner-prompt">
 					<span className="loc-banner-text">📍 Unlock the 3 artworks closest to you →</span>
 					<button
 						className="loc-banner-btn"
-						onClick={enableLocation}
-						disabled={locationStatus === "loading"}
+						onClick={() => navigate("/")}
 					>
-						{locationStatus === "loading" ? "Locating…" : "Enable Location"}
+						Enable Location
 					</button>
 				</div>
 			)}

@@ -1544,6 +1544,44 @@ body:has(.map-container-guest) .nearest-panel {
     cursor: pointer;
 }
 
+/* Camera permission denied toast */
+.scav-camera-error-toast {
+    position: fixed;
+    top: 76px; /* below navbar with 12px gap */
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 300;
+    background: #fee2e2;
+    color: #991b1b;
+    border-radius: 12px;
+    padding: 10px 20px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+    max-width: min(360px, 90vw);
+    width: max-content;
+    text-align: center;
+    pointer-events: none;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    animation: scav-toast-lifecycle 3s ease forwards;
+}
+
+.scav-camera-error-hint {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: #b91c1c;
+    line-height: 1.4;
+}
+
+@keyframes scav-toast-lifecycle {
+    0%   { opacity: 0; transform: translateX(-50%) translateY(-4px); }
+    8%   { opacity: 1; transform: translateX(-50%) translateY(0); }
+    75%  { opacity: 1; transform: translateX(-50%) translateY(0); }
+    100% { opacity: 0; transform: translateX(-50%) translateY(-4px); }
+}
+
 /* Camera modal */
 .camera-overlay {
     position: fixed;

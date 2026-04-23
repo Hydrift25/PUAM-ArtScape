@@ -120,10 +120,14 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 	const navigationStateRef = useRef(null);
 	const userInteractingRef = useRef(false);
 
-	// Updates both the ref (for closure access) and the state (for rendering)
+	// Updates both the ref (for closure access) and the state (for rendering).
+	// Also writes to sessionStorage so ScavengerPage can initialize without a flash.
 	function setLocStatus(status) {
 		locationStatusRef.current = status;
 		setLocationStatus(status);
+		if (status === "granted" || status === "denied") {
+			sessionStorage.setItem("artscape.locationStatus", status);
+		}
 	}
 
 	// Keep ref in sync with prop

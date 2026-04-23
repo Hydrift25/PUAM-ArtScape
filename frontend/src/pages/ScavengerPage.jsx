@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { getSocket } from "../services/socket";
 
@@ -12,8 +11,6 @@ const VERIFY_STATE = {
 
 export default function ScavengerPage({ artworks = [] }) {
 	const { user, login } = useAuth();
-	const navigate = useNavigate();
-	const [searchParams] = useSearchParams();
 	const [finds, setFinds] = useState([]);
 	const [stats, setStats] = useState(null);
 	const [cameraOpen, setCameraOpen] = useState(false);
@@ -22,7 +19,11 @@ export default function ScavengerPage({ artworks = [] }) {
 	const [currObjectId, setCurrObjectId] = useState(null);
 	const [currLat, setCurrLat] = useState(null);
 	const [currLon, setCurrLon] = useState(null);
-	const [locationStatus, setLocationStatus] = useState("pending");
+	const [locationStatus, setLocationStatus] = useState(
+		() => sessionStorage.getItem("artscape.locationStatus") ?? "pending",
+	);
+	const [showCameraError, setShowCameraError] = useState(false);
+	const [cameraErrorPermanent, setCameraErrorPermanent] = useState(false);
 	const [nearbyIds, setNearbyIds] = useState(new Set());
 	const [nearbyDistances, setNearbyDistances] = useState(new Map());
 	const [showDeniedTooltip, setShowDeniedTooltip] = useState(false);
@@ -57,8 +58,8 @@ export default function ScavengerPage({ artworks = [] }) {
 		});
 	}
 
-	async function enableLocation() {
-		setLocationStatus("loading");
+	async function enableLocation(silent = false) {
+		if (!silent) setLocationStatus("loading");
 		try {
 			const pos = await new Promise((resolve, reject) =>
 				navigator.geolocation.getCurrentPosition(resolve, reject, {
@@ -76,18 +77,28 @@ export default function ScavengerPage({ artworks = [] }) {
 				setNearbyDistances(new Map(nearby.map((a) => [a.objectid, a.distance_m])));
 			}
 			setLocationStatus("granted");
+			sessionStorage.setItem("artscape.locationStatus", "granted");
 		} catch {
 			setLocationStatus("denied");
+			sessionStorage.setItem("artscape.locationStatus", "denied");
 		}
 	}
 
 	useEffect(() => {
+		// If MapPage already resolved location this session, skip the loading flash.
+		// Still call enableLocation to populate nearbyIds, but silently.
+		const cached = sessionStorage.getItem("artscape.locationStatus");
+		if (cached === "granted") {
+			enableLocation(true);
+			return;
+		}
 		if (!navigator.permissions) return;
 		navigator.permissions.query({ name: "geolocation" }).then((result) => {
 			if (result.state === "granted") {
 				enableLocation();
 			} else if (result.state === "denied") {
 				setLocationStatus("denied");
+				sessionStorage.setItem("artscape.locationStatus", "denied");
 			}
 			// "prompt" → leave as "pending"
 		}).catch(() => {});
@@ -122,25 +133,12 @@ export default function ScavengerPage({ artworks = [] }) {
 	}, [refreshFindsAndStats]);
 
 	useEffect(() => {
-		const targetId = searchParams.get("objectid");
-		if (!targetId) return;
-		const el = document.querySelector(`[data-objectid="${targetId}"]`);
-		if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
-	}, [searchParams]);
-
-	useEffect(() => {
 		const socket = getSocket();
 		if (!socket) return;
-		const handler = async () => {
-			const updatedFinds = await refreshFindsAndStats();
-			const targetId = searchParams.get("objectid");
-			if (!targetId || !updatedFinds) return;
-			const match = updatedFinds.find((f) => f.objectid === parseInt(targetId));
-			if (match?.verify_state === VERIFY_STATE.ACCEPTED) navigate(-1);
-		};
+		const handler = () => { refreshFindsAndStats(); };
 		socket.on("image_processed", handler);
 		return () => { socket.off("image_processed", handler); };
-	}, [refreshFindsAndStats, searchParams, navigate]);
+	}, [refreshFindsAndStats]);
 
 	// Attach stream to video element once camera modal is open
 	useEffect(() => {
@@ -165,9 +163,14 @@ export default function ScavengerPage({ artworks = [] }) {
 			setCapturedImage(null);
 			setCameraOpen(true);
 		} catch {
-			alert(
-				"Camera permission denied. Please allow camera access to capture artworks.",
-			);
+			let permanent = false;
+			try {
+				const perm = await navigator.permissions.query({ name: "camera" });
+				permanent = perm.state === "denied";
+			} catch {}
+			setCameraErrorPermanent(permanent);
+			setShowCameraError(true);
+			setTimeout(() => setShowCameraError(false), 3000);
 		}
 	}
 
@@ -347,6 +350,18 @@ export default function ScavengerPage({ artworks = [] }) {
 							</>
 						)}
 					</div>
+				</div>
+			)}
+
+			{/* Camera permission error toast */}
+			{showCameraError && (
+				<div className="scav-camera-error-toast">
+					Camera access denied — please allow camera access to capture artworks.
+					{cameraErrorPermanent && (
+						<span className="scav-camera-error-hint">
+							Enable camera access in your browser settings to verify finds.
+						</span>
+					)}
 				</div>
 			)}
 

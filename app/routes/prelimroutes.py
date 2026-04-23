@@ -2,8 +2,17 @@ import os
 import flask
 from flask import send_from_directory, session, redirect, url_for
 from authlib.integrations.flask_client import OAuth
+from authlib.integrations.base_client.errors import OAuthError
 from flask_cors import CORS
+from flask_compress import Compress
+from flask_socketio import SocketIO, join_room
 from app.database import db
+from app.services.shared import image_verify_queue
+from dotenv import load_dotenv
+
+load_dotenv()
+
+import cloudinary.uploader # must import after load_dotenv()!
 
 #-----------------------------------------------------------------------
 
@@ -13,6 +22,7 @@ app = flask.Flask(
     static_url_path=''
 )
 app.secret_key = os.getenv("APP_SECRET_KEY")
+Compress(app)
 frontend_url = os.getenv("FRONTEND_URL")
 if frontend_url:
     CORS(app, supports_credentials=True, origins=frontend_url)
@@ -28,6 +38,18 @@ oauth.register(
     client_kwargs={'scope': 'openid email profile'},
 )
 
+socketio = SocketIO(app, cors_allowed_origins="*")
+
+@socketio.on('connect')
+def handle_connect(auth):
+    user_id = auth.get("user_id") if auth else None
+    if not user_id:
+        return False
+    session_user = session.get("user")
+    if not session_user or session_user.get("id") != user_id:
+        return False
+    join_room(f"user_{user_id}")
+
 #-----------------------------------------------------------------------
 
 
@@ -35,7 +57,9 @@ oauth.register(
 @app.route("/api/artworks", methods=['GET'])
 def artworks():
     data = db.get_all_artworks()
-    return flask.jsonify(data)
+    resp = flask.jsonify(data)
+    resp.headers['Cache-Control'] = 'public, max-age=300'
+    return resp
 
 @app.route("/api/artworks/nearby", methods=['GET'])
 def nearby():
@@ -97,18 +121,30 @@ def scavenger_find():
     if not user:
         return flask.jsonify({"error": "Not logged in"}), 401
     objectid = flask.request.json.get("objectid")
+    image_url = flask.request.json.get("imageUrl")
+    dist_to_object = flask.request.json.get("distToObject")
     if not objectid:
         return flask.jsonify({"error": "No objectid provided"}), 400
-    db.record_find(user["id"], objectid)
+    if not image_url:
+        return flask.jsonify({"error": "No image URL provided"}), 400
+    if dist_to_object is None:
+        return flask.jsonify({"error": "No distance provided"}), 400
+    if os.getenv("DEV_BYPASS_LOCATION") == "true":
+        print(f"[DEV] bypassing location check for user={user['id']} objectid={objectid}")
+        dist_to_object = 0
+    db.record_find(user["id"], objectid, image_url)
+    image_verify_queue.put((user["id"], objectid, image_url, dist_to_object))
     return flask.jsonify({"success": True})
 
-@app.route("/api/scavenger/verify/<int:objectid>", methods=['POST'])
-def scavenger_verify(objectid):
-    user = session.get("user")
-    if not user:
+@app.route("/api/upload", methods=["POST"])
+def upload():
+    if not session.get("user"):
         return flask.jsonify({"error": "Not logged in"}), 401
-    db.verify_find(user["id"], objectid)
-    return flask.jsonify({"success": True})
+    file = flask.request.files.get("image")
+    if not file:
+        return flask.jsonify({"error": "No file"}), 400
+    result = cloudinary.uploader.upload(file)
+    return flask.jsonify({"image_url": result["secure_url"]})
 
 @app.route("/api/scavenger/finds", methods=['GET'])
 def scavenger_finds():
@@ -126,6 +162,9 @@ def scavenger_stats():
 
 @app.route("/api/leaderboard", methods=['GET'])
 def leaderboard():
+    user = session.get("user")
+    if not user:
+        return flask.jsonify({"error": "Not logged in"}), 401
     return flask.jsonify(db.get_leaderboard())
 
 @app.route("/api/leaderboard/me", methods=['GET'])
@@ -134,8 +173,6 @@ def leaderboard_me():
     if not user:
         return flask.jsonify({"error": "Not logged in"}), 401
     result = db.get_leaderboard_me(user["id"])
-    if result is None:
-        return flask.jsonify({"error": "User not found"}), 404
     return flask.jsonify(result)
 
 #-----------------------------------------------------------------------
@@ -147,7 +184,11 @@ def auth_login():
 
 @app.route("/api/auth/callback")
 def auth_callback():
-    token = oauth.google.authorize_access_token()
+    frontend_url = os.getenv("FRONTEND_URL", "/")
+    try:
+        token = oauth.google.authorize_access_token()
+    except OAuthError:
+        return redirect(frontend_url + "/?auth_cancelled=true")
     userinfo = token.get("userinfo", {})
     user = db.get_or_create_user(
         google_sub=userinfo.get("sub"),
@@ -156,7 +197,6 @@ def auth_callback():
         avatar_url=userinfo.get("picture"),
     )
     session["user"] = user
-    frontend_url = os.getenv("FRONTEND_URL", "/")
     return redirect(frontend_url)
 
 @app.route("/api/auth/logout")
@@ -167,6 +207,6 @@ def auth_logout():
 @app.route("/api/auth/me")
 def auth_me():
     user = session.get("user")
-    if user:
-        return flask.jsonify(user)
-    return flask.jsonify({"user": None})
+    resp = flask.jsonify(user if user else {"user": None})
+    resp.headers['Cache-Control'] = 'private, max-age=60'
+    return resp

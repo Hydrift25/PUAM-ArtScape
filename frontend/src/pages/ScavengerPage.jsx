@@ -10,6 +10,8 @@ const VERIFY_STATE = {
 	FAILED_IMAGE: 3,
 };
 
+const DEV_BYPASS_LOCATION = import.meta.env.VITE_DEV_BYPASS_LOCATION === "true";
+
 export default function ScavengerPage({ artworks = [] }) {
 	const { user, login } = useAuth();
 	const navigate = useNavigate();
@@ -432,7 +434,7 @@ export default function ScavengerPage({ artworks = [] }) {
 					const f = findsMap.get(art.objectid);
 					const verifyState = f ? f.verify_state : null;
 					const found = verifyState === VERIFY_STATE.ACCEPTED;
-					const unlocked = nearbyIds.has(art.objectid) && !found;
+					const unlocked = (DEV_BYPASS_LOCATION || nearbyIds.has(art.objectid)) && !found;
 					const locked = !found && !unlocked;
 					const distance = nearbyDistances.get(art.objectid);
 					const showCameraBtn = !found && unlocked;
@@ -450,7 +452,7 @@ export default function ScavengerPage({ artworks = [] }) {
 								{thumb ? (
 									<img
 										src={thumb}
-										alt=""
+										alt={art.title || "Artwork"}
 										className={`scav-card-thumb${found ? "" : " scav-thumb-grey"}`}
 									/>
 								) : (

@@ -122,6 +122,9 @@ def scavenger_find():
         return flask.jsonify({"error": "No image URL provided"}), 400
     if dist_to_object is None:
         return flask.jsonify({"error": "No distance provided"}), 400
+    if os.getenv("DEV_BYPASS_LOCATION") == "true":
+        print(f"[DEV] bypassing location check for user={user['id']} objectid={objectid}")
+        dist_to_object = 0
     db.record_find(user["id"], objectid, image_url)
     image_verify_queue.put((user["id"], objectid, image_url, dist_to_object))
     return flask.jsonify({"success": True})

@@ -37,7 +37,7 @@ export default function NearestArtworksPanel({ artworks, onSelect, hidden, onMin
 							{thumb ? (
 								<img
 									src={thumb}
-									alt=""
+									alt={art.title || "Artwork"}
 									className="nearest-thumb"
 								/>
 							) : (

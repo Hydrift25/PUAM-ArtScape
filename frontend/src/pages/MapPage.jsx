@@ -75,7 +75,7 @@ function fetchGeoPosition() {
 
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN;
 
-export default function MapPage({ isGuest = false, artworks = [], isVisible = true }) {
+export default function MapPage({ isGuest = false, artworks = [], isVisible = true, setUserLocation = null }) {
 	const { user } = useAuth();
 	const mapContainer = useRef(null);
 	const map = useRef(null);
@@ -172,6 +172,7 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 			(pos) => {
 				const { latitude: lat, longitude: lon } = pos.coords;
 				lastPosRef.current = { lat, lon };
+				setUserLocation?.({ lat, lon });
 				if (!map.current) return;
 				if (!userMarkerRef.current) {
 					const el = createUserMarkerEl();
@@ -299,6 +300,7 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 			const { latitude: lat, longitude: lon } = pos.coords;
 			geoPositionRef.current = { lat, lon };
 			lastPosRef.current = { lat, lon };
+			setUserLocation?.({ lat, lon });
 			if (map.current) map.current.setCenter([lon, lat]);
 			setLocStatus("granted");
 			if (!isGuest) resolveMarkerStyles(lat, lon);
@@ -670,6 +672,7 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 					const { latitude: lat, longitude: lon } = pos.coords;
 					geoPositionRef.current = { lat, lon };
 					lastPosRef.current = { lat, lon };
+					setUserLocation?.({ lat, lon });
 					if (map.current) map.current.setCenter([lon, lat]);
 					locationStatusRef.current = "granted";
 					setLocationStatus("granted");

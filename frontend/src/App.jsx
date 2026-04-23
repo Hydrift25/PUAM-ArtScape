@@ -135,6 +135,7 @@ function AppContent() {
 	const location = useLocation();
 	const [artworks, setArtworks] = useState([]);
 	const [artworksLoading, setArtworksLoading] = useState(true);
+	const [userLocation, setUserLocation] = useState(null);
 
 	useEffect(() => {
 		fetch("/api/artworks")
@@ -173,7 +174,7 @@ function AppContent() {
 						<div className="auth-spinner" />
 					</div>
 				)}
-				<MapPage isGuest={true} artworks={artworks} isVisible={true} />
+				<MapPage isGuest={true} artworks={artworks} isVisible={true} setUserLocation={setUserLocation} />
 			</>
 		);
 	}
@@ -200,11 +201,11 @@ function AppContent() {
 				</div>
 			)}
 			<div style={{ display: isMapPage ? "block" : "none" }}>
-				<MapPage isGuest={false} artworks={artworks} isVisible={isMapPage} />
+				<MapPage isGuest={false} artworks={artworks} isVisible={isMapPage} setUserLocation={setUserLocation} />
 			</div>
 			<Suspense fallback={lazyFallback}>
 				<Routes>
-					<Route path="/hunt" element={<ScavengerPage artworks={artworks} />} />
+					<Route path="/hunt" element={<ScavengerPage artworks={artworks} userLocation={userLocation} />} />
 					<Route path="/leaderboard" element={<LeaderboardPage />} />
 					<Route path="/profile" element={<ProfilePage />} />
 				</Routes>

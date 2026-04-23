@@ -2160,6 +2160,78 @@ body:has(.map-container-guest) .nearest-panel {
     padding: 24px 0;
 }
 
+.profile-activity-empty {
+    font-size: 0.85rem;
+    color: #aaa;
+    text-align: center;
+    padding: 12px 0 4px;
+    margin: 0;
+}
+
+.profile-activity-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.profile-activity-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.profile-activity-icon {
+    flex: 0 0 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1rem;
+}
+
+.profile-activity-icon--verified {
+    background: #fff0e7;
+}
+
+.profile-activity-icon--favorited {
+    background: #fce6ec;
+}
+
+.profile-activity-text {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.profile-activity-action {
+    font-size: 0.7rem;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-weight: 600;
+}
+
+.profile-activity-title {
+    font-size: 0.9rem;
+    color: #1a1a1a;
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.profile-activity-time {
+    font-size: 0.78rem;
+    color: #aaa;
+    flex-shrink: 0;
+}
+
 @keyframes markerPopIn {
     0%   { transform: scale(1); }
     40%  { transform: scale(1.18); }
@@ -2543,6 +2615,106 @@ body:has(.map-container-guest) .nearest-panel {
     display: flex;
     flex-direction: column;
     gap: 8px;
+}
+
+.search-bar {
+    position: fixed;
+    top: 74px;
+    left: 12px;
+    right: 64px;
+    max-width: 360px;
+    z-index: 110;
+}
+
+.search-bar-input-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+    background: white;
+    border-radius: 20px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+    padding: 0 10px 0 12px;
+    height: 40px;
+}
+
+.search-bar-icon {
+    font-size: 0.95rem;
+    margin-right: 8px;
+    color: #888;
+}
+
+.search-bar-input {
+    flex: 1;
+    border: none;
+    outline: none;
+    font-size: 0.95rem;
+    background: transparent;
+    color: #1a1a1a;
+}
+
+.search-bar-input::placeholder {
+    color: #aaa;
+}
+
+.search-bar-clear {
+    background: transparent;
+    border: none;
+    color: #888;
+    font-size: 0.9rem;
+    cursor: pointer;
+    padding: 4px 6px;
+    line-height: 1;
+}
+
+.search-bar-clear:hover {
+    color: #333;
+}
+
+.search-bar-dropdown {
+    list-style: none;
+    margin: 6px 0 0;
+    padding: 6px 0;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+    max-height: 320px;
+    overflow-y: auto;
+}
+
+.search-bar-result {
+    padding: 8px 14px;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.search-bar-result--active {
+    background: #f5ede0;
+}
+
+.search-bar-result-title {
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: #1a1a1a;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.search-bar-result-artist {
+    font-size: 0.78rem;
+    color: #888;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.search-bar-empty {
+    padding: 12px 14px;
+    font-size: 0.85rem;
+    color: #aaa;
+    text-align: center;
 }
 
 .map-control-btn {

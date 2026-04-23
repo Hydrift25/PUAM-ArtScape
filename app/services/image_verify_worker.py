@@ -30,7 +30,11 @@ for file in Path('embeddings').iterdir():
 
 def load_model():
     model, preprocess = clip.load("RN50", device=DEVICE)
+    del model.transformer
     model.half()
+    model.eval()
+    for p in model.parameters():
+        p.requires_grad = False
     return model, preprocess
 
 

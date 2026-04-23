@@ -1,20 +1,14 @@
-import { BrowserRouter, Routes, Route, NavLink } from "react-router-dom";
+import { Suspense, lazy, useEffect, useState } from "react";
+import { BrowserRouter, Routes, Route, NavLink, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
+import { initSocket, disconnectSocket, subscribeSocketStatus } from "./services/socket";
 import MapPage from "./pages/MapPage";
-import AuthPage from "./pages/AuthPage";
-import ScavengerPage from "./pages/ScavengerPage";
-import LeaderboardPage from "./pages/LeaderboardPage";
-import ProfilePage from "./pages/ProfilePage";
+import ProfileDropdown from "./components/ProfileDropdown";
 
-function getInitials(name) {
-	if (!name) return "?";
-	return name
-		.split(" ")
-		.map((n) => n[0])
-		.join("")
-		.slice(0, 2)
-		.toUpperCase();
-}
+const AuthPage = lazy(() => import("./pages/AuthPage"));
+const ScavengerPage = lazy(() => import("./pages/ScavengerPage"));
+const LeaderboardPage = lazy(() => import("./pages/LeaderboardPage"));
+const ProfilePage = lazy(() => import("./pages/ProfilePage"));
 
 function MapIcon() {
 	return (
@@ -64,25 +58,14 @@ function GuestNavbar() {
 }
 
 function AuthNavbar() {
-	const { user } = useAuth();
-	const initials = getInitials(user?.display_name);
+	const { user, logout } = useAuth();
 	return (
 		<nav className="app-navbar">
 			<div className="navbar-left">
 				<span className="navbar-title">📍 Princeton Art Explorer</span>
 				<span className="navbar-subtitle">Discover art across campus</span>
 			</div>
-			<div className="navbar-avatar">
-				{user?.avatar_url ? (
-					<img
-						src={user.avatar_url}
-						alt={initials}
-						className="navbar-avatar-img"
-					/>
-				) : (
-					<span>{initials}</span>
-				)}
-			</div>
+			<ProfileDropdown user={user} onLogout={logout} />
 		</nav>
 	);
 }
@@ -131,10 +114,40 @@ function BottomNav() {
 	);
 }
 
-function AppContent() {
-	const { user, loading, guest } = useAuth();
+const lazyFallback = (
+	<div className="auth-spinner-wrap">
+		<div className="auth-spinner" />
+	</div>
+);
 
-	if (loading) {
+function AppContent() {
+	const { user, loading: authLoading, guest } = useAuth();
+
+	const [socketStatus, setSocketStatus] = useState("disconnected");
+
+	useEffect(() => {
+		if (!user?.id) return;
+		initSocket(user.id);
+		const unsub = subscribeSocketStatus(setSocketStatus);
+		return () => { unsub(); disconnectSocket(); };
+	}, [user?.id]);
+
+	const location = useLocation();
+	const [artworks, setArtworks] = useState([]);
+	const [artworksLoading, setArtworksLoading] = useState(true);
+	const [userLocation, setUserLocation] = useState(null);
+
+	useEffect(() => {
+		fetch("/api/artworks")
+			.then((r) => r.json())
+			.then((data) => {
+				setArtworks(data);
+				setArtworksLoading(false);
+			})
+			.catch(() => setArtworksLoading(false));
+	}, []);
+
+	if (authLoading) {
 		return (
 			<div className="auth-spinner-wrap">
 				<div className="auth-spinner" />
@@ -143,38 +156,71 @@ function AppContent() {
 	}
 
 	if (!user && !guest) {
-		return <AuthPage />;
+		return (
+			<Suspense fallback={lazyFallback}>
+				<AuthPage />
+			</Suspense>
+		);
 	}
 
 	const isGuest = !user && guest;
 
+	if (isGuest) {
+		return (
+			<>
+				<GuestNavbar />
+				{artworksLoading && (
+					<div style={{ position: "fixed", top: 60, left: "50%", transform: "translateX(-50%)", zIndex: 100 }}>
+						<div className="auth-spinner" />
+					</div>
+				)}
+				<MapPage isGuest={true} artworks={artworks} isVisible={true} setUserLocation={setUserLocation} />
+			</>
+		);
+	}
+
+	const isMapPage = location.pathname === "/";
+
+	const showSocketBanner = socketStatus === "reconnecting" || socketStatus === "failed";
+
 	return (
-		<BrowserRouter>
-			{isGuest ? (
-				<>
-					<GuestNavbar />
-					<MapPage isGuest={true} />
-				</>
-			) : (
-				<>
-					<AuthNavbar />
-					<Routes>
-						<Route path="/" element={<MapPage isGuest={false} />} />
-						<Route path="/hunt" element={<ScavengerPage />} />
-						<Route path="/leaderboard" element={<LeaderboardPage />} />
-						<Route path="/profile" element={<ProfilePage />} />
-					</Routes>
-					<BottomNav />
-				</>
+		<>
+			<AuthNavbar />
+			{showSocketBanner && (
+				<div
+					role="status"
+					aria-live="polite"
+					className={`socket-banner${socketStatus === "failed" ? " socket-banner--failed" : ""}`}
+				>
+					{socketStatus === "failed" ? "Connection lost — refresh to retry" : "Reconnecting…"}
+				</div>
 			)}
-		</BrowserRouter>
+			{artworksLoading && (
+				<div style={{ position: "fixed", top: 60, left: "50%", transform: "translateX(-50%)", zIndex: 100 }}>
+					<div className="auth-spinner" />
+				</div>
+			)}
+			<div style={{ display: isMapPage ? "block" : "none" }}>
+				<MapPage isGuest={false} artworks={artworks} isVisible={isMapPage} setUserLocation={setUserLocation} />
+			</div>
+			<Suspense fallback={lazyFallback}>
+				<Routes>
+					<Route path="/hunt" element={<ScavengerPage artworks={artworks} userLocation={userLocation} />} />
+					<Route path="/leaderboard" element={<LeaderboardPage />} />
+					<Route path="/profile" element={<ProfilePage />} />
+				</Routes>
+			</Suspense>
+			<BottomNav />
+		</>
 	);
 }
 
 export default function App() {
 	return (
-		<AuthProvider>
-			<AppContent />
-		</AuthProvider>
+		<BrowserRouter>
+			<AuthProvider>
+				<AppContent />
+			</AuthProvider>
+		</BrowserRouter>
 	);
 }

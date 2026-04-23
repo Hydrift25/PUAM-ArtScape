@@ -14,8 +14,7 @@ export default function SearchBar({ artworks = [], onSelect }) {
 		const matches = [];
 		for (const art of artworks) {
 			const title = (art.title || "").toLowerCase();
-			const artist = (art.artist || "").toLowerCase();
-			if (title.includes(q) || artist.includes(q)) {
+			if (title.includes(q)) {
 				matches.push(art);
 				if (matches.length >= MAX_RESULTS) break;
 			}
@@ -107,11 +106,6 @@ export default function SearchBar({ artworks = [], onSelect }) {
 								<span className="search-bar-result-title">
 									{art.title || "Untitled"}
 								</span>
-								{art.artist && (
-									<span className="search-bar-result-artist">
-										{art.artist}
-									</span>
-								)}
 							</li>
 						))
 					)}

@@ -135,6 +135,7 @@ function AppContent() {
 	const location = useLocation();
 	const [artworks, setArtworks] = useState([]);
 	const [artworksLoading, setArtworksLoading] = useState(true);
+	const [userLocation, setUserLocation] = useState(null);
 
 	useEffect(() => {
 		fetch("/api/artworks")
@@ -173,7 +174,7 @@ function AppContent() {
 						<div className="auth-spinner" />
 					</div>
 				)}
-				<MapPage isGuest={true} artworks={artworks} isVisible={true} />
+				<MapPage isGuest={true} artworks={artworks} isVisible={true} setUserLocation={setUserLocation} />
 			</>
 		);
 	}
@@ -189,20 +190,7 @@ function AppContent() {
 				<div
 					role="status"
 					aria-live="polite"
-					style={{
-						position: "fixed",
-						top: 60,
-						left: "50%",
-						transform: "translateX(-50%)",
-						zIndex: 150,
-						padding: "6px 14px",
-						borderRadius: 999,
-						fontSize: 13,
-						fontWeight: 500,
-						background: socketStatus === "failed" ? "#c33" : "#555",
-						color: "#fff",
-						boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
-					}}
+					className={`socket-banner${socketStatus === "failed" ? " socket-banner--failed" : ""}`}
 				>
 					{socketStatus === "failed" ? "Connection lost — refresh to retry" : "Reconnecting…"}
 				</div>
@@ -213,11 +201,11 @@ function AppContent() {
 				</div>
 			)}
 			<div style={{ display: isMapPage ? "block" : "none" }}>
-				<MapPage isGuest={false} artworks={artworks} isVisible={isMapPage} />
+				<MapPage isGuest={false} artworks={artworks} isVisible={isMapPage} setUserLocation={setUserLocation} />
 			</div>
 			<Suspense fallback={lazyFallback}>
 				<Routes>
-					<Route path="/hunt" element={<ScavengerPage artworks={artworks} />} />
+					<Route path="/hunt" element={<ScavengerPage artworks={artworks} userLocation={userLocation} />} />
 					<Route path="/leaderboard" element={<LeaderboardPage />} />
 					<Route path="/profile" element={<ProfilePage />} />
 				</Routes>

@@ -5,6 +5,7 @@ import BottomSheet from "../components/BottomSheet";
 import DirectionsPanel from "../components/DirectionsPanel";
 import ScavengerSidebar from "../components/ScavengerSidebar";
 import NearestArtworksPanel from "../components/NearestArtworksPanel";
+import SearchBar from "../components/SearchBar";
 import {
 	createNearbyMarkerEl,
 	createAllMarkerEl,
@@ -15,6 +16,7 @@ import { getSocket } from "../services/socket";
 
 const FOUND_STORAGE_KEY = "artscape.foundIds";
 const VERIFY_STATE = { PENDING: 0, ACCEPTED: 1, FAILED_LOCATION: 2, FAILED_IMAGE: 3 };
+const DEV_BYPASS_LOCATION = import.meta.env.VITE_DEV_BYPASS_LOCATION === "true";
 
 function CrosshairIcon() {
 	return (
@@ -323,7 +325,7 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 		clearMarkers();
 		markerElsRef.current.clear();
 
-		const showAllDetailed = isGuest || locationStatusRef.current === "denied";
+		const showAllDetailed = isGuest || locationStatusRef.current === "denied" || DEV_BYPASS_LOCATION;
 
 		if (showAllDetailed) {
 			artworksData.forEach((art) => {
@@ -753,6 +755,19 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 			<div
 				ref={mapContainer}
 				className={`map-container ${isGuest ? "map-container-guest" : "map-container-auth"}`}
+			/>
+			<SearchBar
+				artworks={artworks}
+				onSelect={(art) => {
+					if (!map.current) return;
+					map.current.flyTo({
+						center: [art.lon, art.lat],
+						zoom: 18,
+						duration: 700,
+						essential: true,
+					});
+					setSheetContent({ art, type: "detailed" });
+				}}
 			/>
 			<div className="map-controls">
 				<button

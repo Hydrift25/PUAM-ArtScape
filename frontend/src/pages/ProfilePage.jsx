@@ -1,6 +1,17 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+
+function relativeTime(iso) {
+	if (!iso) return "";
+	const then = new Date(iso);
+	const diff = Math.floor((Date.now() - then.getTime()) / 1000);
+	if (diff < 60) return "just now";
+	if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+	if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+	if (diff < 2592000) return `${Math.floor(diff / 86400)}d ago`;
+	return then.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
 
 function getInitials(name) {
 	if (!name) return "?";
@@ -98,6 +109,29 @@ export default function ProfilePage() {
 	const visitedCount = visited.length;
 	const verifiedCount = visited.filter((v) => v.verify_state === 1).length;
 	const favCount = favorites.length;
+
+	const activity = useMemo(() => {
+		const events = [
+			...visited
+				.filter((v) => v.verify_state === 1 && v.found_at)
+				.map((v) => ({
+					kind: "verified",
+					title: v.title,
+					at: v.found_at,
+					objectid: v.objectid,
+				})),
+			...favorites
+				.filter((f) => f.saved_at)
+				.map((f) => ({
+					kind: "favorited",
+					title: f.title,
+					at: f.saved_at,
+					objectid: f.objectid,
+				})),
+		];
+		events.sort((a, b) => new Date(b.at) - new Date(a.at));
+		return events.slice(0, 5);
+	}, [visited, favorites]);
 	const initials = getInitials(user?.display_name);
 	const pct = totalCount ? Math.round((verifiedCount / totalCount) * 100) : 0;
 
@@ -188,6 +222,44 @@ export default function ProfilePage() {
 						artworks={favorites}
 						emptyMessage="No favorites yet. Heart an artwork to save it here!"
 					/>
+				)}
+			</div>
+
+			{/* Recent activity */}
+			<div className="page-card">
+				<h3 className="profile-card-title">Recent Activity</h3>
+				{activity.length === 0 ? (
+					<p className="profile-activity-empty">
+						No recent activity yet — go find some art!
+					</p>
+				) : (
+					<ul className="profile-activity-list">
+						{activity.map((ev, i) => (
+							<li
+								key={`${ev.kind}-${ev.objectid}-${i}`}
+								className="profile-activity-row"
+							>
+								<span
+									className={`profile-activity-icon profile-activity-icon--${ev.kind}`}
+								>
+									{ev.kind === "verified" ? "📷" : "❤️"}
+								</span>
+								<div className="profile-activity-text">
+									<span className="profile-activity-action">
+										{ev.kind === "verified"
+											? "Verified"
+											: "Favorited"}
+									</span>
+									<span className="profile-activity-title">
+										{ev.title || "Untitled"}
+									</span>
+								</div>
+								<span className="profile-activity-time">
+									{relativeTime(ev.at)}
+								</span>
+							</li>
+						))}
+					</ul>
 				)}
 			</div>
 

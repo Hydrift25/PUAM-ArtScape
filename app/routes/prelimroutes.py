@@ -6,9 +6,13 @@ from authlib.integrations.base_client.errors import OAuthError
 from flask_cors import CORS
 from flask_compress import Compress
 from flask_socketio import SocketIO, join_room
-import cloudinary.uploader
 from app.database import db
 from app.services.shared import image_verify_queue
+from dotenv import load_dotenv
+
+load_dotenv()
+
+import cloudinary.uploader # must import after load_dotenv()!
 
 #-----------------------------------------------------------------------
 
@@ -164,8 +168,6 @@ def leaderboard_me():
     if not user:
         return flask.jsonify({"error": "Not logged in"}), 401
     result = db.get_leaderboard_me(user["id"])
-    if result is None:
-        return flask.jsonify({"error": "User not found"}), 404
     return flask.jsonify(result)
 
 #-----------------------------------------------------------------------

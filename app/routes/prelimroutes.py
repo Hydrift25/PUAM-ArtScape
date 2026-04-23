@@ -165,8 +165,6 @@ def leaderboard_me():
     if not user:
         return flask.jsonify({"error": "Not logged in"}), 401
     result = db.get_leaderboard_me(user["id"])
-    if result is None:
-        return flask.jsonify({"error": "User not found"}), 404
     return flask.jsonify(result)
 
 #-----------------------------------------------------------------------

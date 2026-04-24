@@ -97,6 +97,8 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 	const watchIdRef = useRef(null);
 	// Guards against double nearby fetch on the guest path (mirrors stylesResolvedRef)
 	const nearbyFetchedRef = useRef(false);
+	// Tracks the last lat/lon where nearby data was fetched — used to debounce movement updates (>10m threshold)
+	const lastNearbyRefreshPosRef = useRef(null);
 
 	// 'pending' | 'loading' | 'granted' | 'denied'
 	const [locationStatus, setLocationStatus] = useState("pending");
@@ -178,6 +180,19 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 						.addTo(map.current);
 				} else {
 					userMarkerRef.current.setLngLat([lon, lat]);
+				}
+				const last = lastNearbyRefreshPosRef.current;
+				const movedEnough = !last || haversineMeters(lat, lon, last.lat, last.lon) > 10;
+				if (movedEnough) {
+					if (!isGuest && stylesResolvedRef.current && markerElsRef.current.size > 0) {
+						refreshNearbyState(lat, lon);
+					} else if (isGuest && nearbyFetchedRef.current) {
+						lastNearbyRefreshPosRef.current = { lat, lon };
+						fetch(`/api/artworks/nearby?lat=${lat}&lon=${lon}`)
+							.then((r) => r.json())
+							.then((data) => setNearbyArtworks(data.map((a) => ({ ...a, distance: Math.round(a.distance_m) })).slice(0, 3)))
+							.catch(() => {});
+					}
 				}
 			},
 			null,
@@ -390,6 +405,7 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 				distance: Math.round(a.distance_m),
 			}));
 			setNearbyArtworks(nearbyWithDist.slice(0, 3));
+			lastNearbyRefreshPosRef.current = { lat, lon };
 
 			const nearbyIds = new Set(nearbyData.map((a) => a.objectid));
 
@@ -429,6 +445,58 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 			console.error("Could not resolve marker styles", e);
 			// Allow a retry on error
 			stylesResolvedRef.current = false;
+		}
+	}
+
+	// Repeatable version of resolveMarkerStyles — no one-time guard, handles both
+	// near→far and far→near transitions. Called from the watchPosition tick on movement >10m.
+	async function refreshNearbyState(lat, lon) {
+		if (!markerElsRef.current.size) return;
+		lastNearbyRefreshPosRef.current = { lat, lon };
+		try {
+			const res = await fetch(`/api/artworks/nearby?lat=${lat}&lon=${lon}`);
+			const nearbyData = await res.json();
+			const nearbyWithDist = nearbyData.map((a) => ({
+				...a,
+				distance: Math.round(a.distance_m),
+			}));
+			setNearbyArtworks(nearbyWithDist.slice(0, 3));
+			const nearbyIds = new Set(nearbyData.map((a) => a.objectid));
+			markerElsRef.current.forEach(({ el, art }, objectid) => {
+				const isNearby = nearbyIds.has(objectid);
+				const wasNearby = el.classList.contains("marker-nearby");
+				if (isNearby && !wasNearby) {
+					el.classList.remove("marker-all");
+					el.classList.add("marker-nearby");
+					el.style.opacity = "";
+					el.style.filter = "";
+					const inner = el.querySelector(".marker-inner");
+					if (inner) {
+						inner.classList.add("marker-popin");
+						inner.addEventListener(
+							"animationend",
+							() => inner.classList.remove("marker-popin"),
+							{ once: true },
+						);
+					}
+					el.onclick = (e) => {
+						if (navigationStateRef.current) return;
+						e.stopPropagation();
+						setSheetContent({ art, type: "detailed" });
+					};
+				} else if (!isNearby && wasNearby) {
+					el.classList.remove("marker-nearby");
+					el.classList.add("marker-all");
+					el.style.opacity = "0.7";
+					el.style.filter = "";
+					el.onclick = () => {
+						if (navigationStateRef.current) return;
+						setSheetContent({ art, type: "succinct" });
+					};
+				}
+			});
+		} catch (e) {
+			console.error("Could not refresh nearby state", e);
 		}
 	}
 
@@ -533,6 +601,7 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 
 	function onPositionUpdate(position, routeCoords, destination) {
 		const { latitude, longitude, accuracy } = position.coords;
+		lastPosRef.current = { lat: latitude, lon: longitude };
 
 		const distanceRemaining = haversineMeters(
 			latitude,

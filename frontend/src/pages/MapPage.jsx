@@ -3,7 +3,6 @@ import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import BottomSheet from "../components/BottomSheet";
 import DirectionsPanel from "../components/DirectionsPanel";
-import ScavengerSidebar from "../components/ScavengerSidebar";
 import NearestArtworksPanel from "../components/NearestArtworksPanel";
 import SearchBar from "../components/SearchBar";
 import {
@@ -106,7 +105,6 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 		() => sessionStorage.getItem("artscape.locDeniedDismissed") === "1",
 	);
 	const [sheetContent, setSheetContent] = useState(null);
-	const [sidebarOpen, setSidebarOpen] = useState(false);
 	const [findsMap, setFindsMap] = useState(new Map());
 	const [favoritedIds, setFavoritedIds] = useState(new Set());
 	const [nearbyArtworks, setNearbyArtworks] = useState([]);
@@ -182,7 +180,7 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 					userMarkerRef.current.setLngLat([lon, lat]);
 				}
 			},
-			(err) => console.error(err),
+			null,
 			{ enableHighAccuracy: true, maximumAge: 10000 },
 		);
 	}, [locationStatus]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -365,7 +363,7 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 			const nearbyData = await res.json();
 			const nearbyWithDist = nearbyData.map((a) => ({
 				...a,
-				distance: Math.round(haversineMeters(lat, lon, a.lat, a.lon)),
+				distance: Math.round(a.distance_m),
 			}));
 			setNearbyArtworks(nearbyWithDist.slice(0, 3));
 		} catch (e) {
@@ -389,7 +387,7 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 
 			const nearbyWithDist = nearbyData.map((a) => ({
 				...a,
-				distance: Math.round(haversineMeters(lat, lon, a.lat, a.lon)),
+				distance: Math.round(a.distance_m),
 			}));
 			setNearbyArtworks(nearbyWithDist.slice(0, 3));
 
@@ -454,7 +452,6 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 			const res = await fetch(url);
 			const json = await res.json();
 			if (!json.routes || json.routes.length === 0) {
-				console.warn("No route found");
 				return;
 			}
 			routeData = json.routes[0];
@@ -505,7 +502,7 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 
 			const watchId = navigator.geolocation.watchPosition(
 				(position) => onPositionUpdate(position, prev.route, prev.destination),
-				(err) => console.warn("watchPosition error:", err),
+				null,
 				{ enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 },
 			);
 
@@ -794,12 +791,6 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 					<CrosshairIcon />
 				</button>
 			</div>
-			<ScavengerSidebar
-				open={sidebarOpen}
-				onClose={() => setSidebarOpen(false)}
-				artworks={artworks}
-				foundIds={foundIds}
-			/>
 			<NearestArtworksPanel
 				artworks={nearbyArtworks}
 				onSelect={(art) => setSheetContent({ art, type: "detailed" })}

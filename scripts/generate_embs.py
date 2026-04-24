@@ -4,38 +4,40 @@ import requests
 from PIL import Image
 from io import BytesIO
 import torch
-import clip
-from torchvision import transforms
+from torchvision.models import mobilenet_v3_small, MobileNet_V3_Small_Weights
 import torch.nn.functional as F
 
 DEVICE = torch.device("cpu")
-DTYPE = torch.float16
 
-model = torch.hub.load("facebookresearch/dinov2", "dinov2_vits14")
+# Load MobileNetV3 with pretrained weights
+weights = MobileNet_V3_Small_Weights.DEFAULT
+model = mobilenet_v3_small(weights=weights)
+
+# Use only feature extractor (remove classifier)
+model = model.features
 model.eval()
-model = model.to(DEVICE).to(DTYPE)
+model = model.to(DEVICE)
 
-preprocess = transforms.Compose(
-    [
-        transforms.Resize(256),
-        transforms.CenterCrop(224),
-        transforms.ToTensor(),
-        transforms.Normalize(
-            mean=(0.485, 0.456, 0.406),
-            std=(0.229, 0.224, 0.225),
-        ),
-    ]
-)
+# Use correct preprocessing from weights
+preprocess = weights.transforms()
 
 OUTPUT_DIR = "embeddings"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 
 def get_embedding_from_pil(image):
-    image_input = preprocess(image).unsqueeze(0).to(DEVICE).to(DTYPE)
+    image_input = preprocess(image).unsqueeze(0).to(DEVICE)
+
     with torch.no_grad():
-        embedding = model(image_input)
-    return F.normalize(embedding, dim=-1)
+        features = model(image_input)  # [1, C, H, W]
+
+        # Global average pooling → [1, C]
+        embedding = features.mean(dim=[2, 3])
+
+        # Normalize (same as before)
+        embedding = F.normalize(embedding, dim=-1)
+
+    return embedding
 
 
 def download_image(url):

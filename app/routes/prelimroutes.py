@@ -12,14 +12,16 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-import cloudinary.uploader # must import after load_dotenv()!
+import cloudinary.uploader  # must import after load_dotenv()!
 
-#-----------------------------------------------------------------------
+# -----------------------------------------------------------------------
 
 app = flask.Flask(
     __name__,
-    static_folder=os.path.join(os.path.dirname(__file__), '..', '..', 'frontend', 'dist'),
-    static_url_path=''
+    static_folder=os.path.join(
+        os.path.dirname(__file__), "..", "..", "frontend", "dist"
+    ),
+    static_url_path="",
 )
 app.secret_key = os.getenv("APP_SECRET_KEY")
 Compress(app)
@@ -31,16 +33,17 @@ else:
 
 oauth = OAuth(app)
 oauth.register(
-    name='google',
+    name="google",
     client_id=os.getenv("GOOGLE_CLIENT_ID"),
     client_secret=os.getenv("GOOGLE_CLIENT_SECRET"),
-    server_metadata_url='https://accounts.google.com/.well-known/openid-configuration',
-    client_kwargs={'scope': 'openid email profile'},
+    server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
+    client_kwargs={"scope": "openid email profile"},
 )
 
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-@socketio.on('connect')
+
+@socketio.on("connect")
 def handle_connect(auth):
     user_id = auth.get("user_id") if auth else None
     if not user_id:
@@ -50,24 +53,27 @@ def handle_connect(auth):
         return False
     join_room(f"user_{user_id}")
 
-#-----------------------------------------------------------------------
+
+# -----------------------------------------------------------------------
 
 
 # API endpoint
-@app.route("/api/artworks", methods=['GET'])
+@app.route("/api/artworks", methods=["GET"])
 def artworks():
     data = db.get_all_artworks()
     resp = flask.jsonify(data)
-    resp.headers['Cache-Control'] = 'public, max-age=300'
+    resp.headers["Cache-Control"] = "public, max-age=300"
     return resp
 
-@app.route("/api/artworks/nearby", methods=['GET'])
+
+@app.route("/api/artworks/nearby", methods=["GET"])
 def nearby():
     lat = float(flask.request.args.get("lat"))
     lon = float(flask.request.args.get("lon"))
     return flask.jsonify(db.get_nearby_artworks(lat, lon))
 
-@app.route("/api/artworks/favorite", methods=['POST'])
+
+@app.route("/api/artworks/favorite", methods=["POST"])
 def favorite():
     user = session.get("user")
     if not user:
@@ -78,31 +84,35 @@ def favorite():
     is_now_favorite = db.toggle_favorite(user["id"], objectid)
     return flask.jsonify({"favorited": is_now_favorite})
 
-@app.route("/api/artworks/favorites", methods=['GET'])
+
+@app.route("/api/artworks/favorites", methods=["GET"])
 def get_favorites():
     user = session.get("user")
     if not user:
         return flask.jsonify({"error": "Not logged in"}), 401
     return flask.jsonify(db.get_favorites(user["id"]))
 
+
 # Serve React
-@app.route('/', defaults={'path': ''})
-@app.route('/<path:path>')
+@app.route("/", defaults={"path": ""})
+@app.route("/<path:path>")
 def serve_react(path):
     dist = app.static_folder
     target = os.path.join(dist, path)
     if path and os.path.exists(target):
         return send_from_directory(dist, path)
-    return send_from_directory(dist, 'index.html')
+    return send_from_directory(dist, "index.html")
 
-@app.route("/api/artworks/visited", methods=['GET'])
+
+@app.route("/api/artworks/visited", methods=["GET"])
 def visited_artworks():
     user = session.get("user")
     if not user:
         return flask.jsonify({"error": "Not logged in"}), 401
     return flask.jsonify(db.get_visited_artworks(user["id"]))
 
-@app.route("/api/artworks/visited", methods=['POST'])
+
+@app.route("/api/artworks/visited", methods=["POST"])
 def update_visited_artwork():
     user = session.get("user")
     if not user:
@@ -113,9 +123,11 @@ def update_visited_artwork():
     db.update_visited_artwork(user["id"], objectid)
     return flask.jsonify({"success": True})
 
-#-----------------------------------------------------------------------
 
-@app.route("/api/scavenger/find", methods=['POST'])
+# -----------------------------------------------------------------------
+
+
+@app.route("/api/scavenger/find", methods=["POST"])
 def scavenger_find():
     user = session.get("user")
     if not user:
@@ -130,11 +142,14 @@ def scavenger_find():
     if dist_to_object is None:
         return flask.jsonify({"error": "No distance provided"}), 400
     if os.getenv("DEV_BYPASS_LOCATION") == "true":
-        print(f"[DEV] bypassing location check for user={user['id']} objectid={objectid}")
+        print(
+            f"[DEV] bypassing location check for user={user['id']} objectid={objectid}"
+        )
         dist_to_object = 0
     db.record_find(user["id"], objectid, image_url)
     image_verify_queue.put((user["id"], objectid, image_url, dist_to_object))
     return flask.jsonify({"success": True})
+
 
 @app.route("/api/upload", methods=["POST"])
 def upload():
@@ -146,28 +161,32 @@ def upload():
     result = cloudinary.uploader.upload(file)
     return flask.jsonify({"image_url": result["secure_url"]})
 
-@app.route("/api/scavenger/finds", methods=['GET'])
+
+@app.route("/api/scavenger/finds", methods=["GET"])
 def scavenger_finds():
     user = session.get("user")
     if not user:
         return flask.jsonify({"error": "Not logged in"}), 401
     return flask.jsonify(db.get_finds(user["id"]))
 
-@app.route("/api/scavenger/stats", methods=['GET'])
+
+@app.route("/api/scavenger/stats", methods=["GET"])
 def scavenger_stats():
     user = session.get("user")
     if not user:
         return flask.jsonify({"error": "Not logged in"}), 401
     return flask.jsonify(db.get_scavenger_stats(user["id"]))
 
-@app.route("/api/leaderboard", methods=['GET'])
+
+@app.route("/api/leaderboard", methods=["GET"])
 def leaderboard():
     user = session.get("user")
     if not user:
         return flask.jsonify({"error": "Not logged in"}), 401
     return flask.jsonify(db.get_leaderboard())
 
-@app.route("/api/leaderboard/me", methods=['GET'])
+
+@app.route("/api/leaderboard/me", methods=["GET"])
 def leaderboard_me():
     user = session.get("user")
     if not user:
@@ -175,12 +194,15 @@ def leaderboard_me():
     result = db.get_leaderboard_me(user["id"])
     return flask.jsonify(result)
 
-#-----------------------------------------------------------------------
+
+# -----------------------------------------------------------------------
+
 
 @app.route("/api/auth/login")
 def auth_login():
     callback_url = url_for("auth_callback", _external=True)
     return oauth.google.authorize_redirect(callback_url)
+
 
 @app.route("/api/auth/callback")
 def auth_callback():
@@ -199,14 +221,16 @@ def auth_callback():
     session["user"] = user
     return redirect(frontend_url)
 
+
 @app.route("/api/auth/logout")
 def auth_logout():
     session.pop("user", None)
     return flask.jsonify({"success": True})
 
+
 @app.route("/api/auth/me")
 def auth_me():
     user = session.get("user")
     resp = flask.jsonify(user if user else {"user": None})
-    resp.headers['Cache-Control'] = 'private, max-age=60'
+    resp.headers["Cache-Control"] = "private, max-age=60"
     return resp

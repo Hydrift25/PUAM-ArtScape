@@ -5,9 +5,15 @@ from authlib.integrations.flask_client import OAuth
 from authlib.integrations.base_client.errors import OAuthError
 from flask_cors import CORS
 from flask_compress import Compress
-from flask_socketio import SocketIO, join_room
+import requests
+from google import genai
+from google.genai import types
 from app.database import db
-from app.services.shared import image_verify_queue
+from app.database.db import (
+    VERIFY_STATE_ACCEPTED,
+    VERIFY_STATE_FAILED_LOCATION,
+    VERIFY_STATE_FAILED_IMAGE,
+)
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -40,19 +46,7 @@ oauth.register(
     client_kwargs={"scope": "openid email profile"},
 )
 
-socketio = SocketIO(app, cors_allowed_origins="*")
-
-
-@socketio.on("connect")
-def handle_connect(auth):
-    user_id = auth.get("user_id") if auth else None
-    if not user_id:
-        return False
-    session_user = session.get("user")
-    if not session_user or session_user.get("id") != user_id:
-        return False
-    join_room(f"user_{user_id}")
-
+VERIFY_MIN_DIST_M = float(os.getenv("VERIFY_MIN_DIST_M", 50))
 
 # -----------------------------------------------------------------------
 
@@ -132,23 +126,62 @@ def scavenger_find():
     user = session.get("user")
     if not user:
         return flask.jsonify({"error": "Not logged in"}), 401
-    objectid = flask.request.json.get("objectid")
-    image_url = flask.request.json.get("imageUrl")
-    dist_to_object = flask.request.json.get("distToObject")
+
+    data = flask.request.json
+    objectid = data.get("objectid")
+    image_url = data.get("imageUrl")
+    dist_to_object = data.get("distToObject")
+
     if not objectid:
         return flask.jsonify({"error": "No objectid provided"}), 400
     if not image_url:
         return flask.jsonify({"error": "No image URL provided"}), 400
     if dist_to_object is None:
         return flask.jsonify({"error": "No distance provided"}), 400
+
     if os.getenv("DEV_BYPASS_LOCATION") == "true":
         print(
             f"[DEV] bypassing location check for user={user['id']} objectid={objectid}"
         )
         dist_to_object = 0
-    db.record_find(user["id"], objectid, image_url)
-    image_verify_queue.put((user["id"], objectid, image_url, dist_to_object))
-    return flask.jsonify({"success": True})
+
+    if float(dist_to_object) > VERIFY_MIN_DIST_M:
+        db.record_find(user["id"], objectid, image_url, VERIFY_STATE_FAILED_LOCATION)
+        return flask.jsonify({"verify_state": VERIFY_STATE_FAILED_LOCATION})
+
+    artwork = db.get_artwork_by_id(objectid)
+    if not artwork:
+        return flask.jsonify({"error": "Artwork not found"}), 404
+
+    ref_image_url = artwork["image_url"] + "/full/600,/0/default.jpg"
+
+    try:
+        client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+
+        ref_bytes = requests.get(ref_image_url).content
+        user_bytes = requests.get(image_url).content
+
+        response = client.models.generate_content(
+            model="gemini-3.1-flash-lite-preview",
+            contents=[
+                "You are verifying a scavenger hunt photo submission at Princeton University. "
+                "The FIRST image is the official reference photo of a campus artwork. "
+                "The SECOND image was taken by a user trying to find this artwork. "
+                "Does the user's photo clearly show the same artwork or sculpture? "
+                "Reply with only YES or NO.",
+                types.Part.from_bytes(data=ref_bytes, mime_type="image/jpeg"),
+                types.Part.from_bytes(data=user_bytes, mime_type="image/jpeg"),
+            ],
+        )
+
+        answer = response.text.strip().upper()
+        verify_state = VERIFY_STATE_ACCEPTED if "YES" in answer else VERIFY_STATE_FAILED_IMAGE
+    except Exception as e:
+        print(f"[verify] Gemini error: {e}")
+        verify_state = VERIFY_STATE_FAILED_IMAGE
+
+    db.record_find(user["id"], objectid, image_url, verify_state)
+    return flask.jsonify({"verify_state": verify_state})
 
 
 @app.route("/api/upload", methods=["POST"])

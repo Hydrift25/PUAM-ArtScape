@@ -217,11 +217,11 @@ def update_visited_artwork(user_id, objectid):
             conn.commit()
 
 
-def record_find(user_id, objectid, photo_url):
+def record_find(user_id, objectid, photo_url, verify_state=VERIFY_STATE_PENDING):
     # ON CONFLICT UPDATE allows re-submission when prior verification failed
     query = """
         INSERT INTO scavenger_hunt_finds (user_id, objectid, photo_url, verify_state)
-        VALUES (%s, %s, %s, 0)
+        VALUES (%s, %s, %s, %s)
         ON CONFLICT (user_id, objectid)
         DO UPDATE SET
             photo_url = EXCLUDED.photo_url,
@@ -229,7 +229,7 @@ def record_find(user_id, objectid, photo_url):
     """
     with contextlib.closing(psycopg.connect(db_url)) as conn:
         with contextlib.closing(conn.cursor()) as cur:
-            cur.execute(query, (user_id, objectid, photo_url))
+            cur.execute(query, (user_id, objectid, photo_url, verify_state))
             conn.commit()
 
 

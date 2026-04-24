@@ -1518,6 +1518,17 @@ body:has(.map-container-guest) .nearest-panel {
     color: #888;
 }
 
+@keyframes verify-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.45; }
+}
+
+.scav-status-verifying {
+    background: #eef1fb;
+    color: #4a6cf7;
+    animation: verify-pulse 1.2s ease-in-out infinite;
+}
+
 .scav-guest-card {
     display: flex;
     flex-direction: column;

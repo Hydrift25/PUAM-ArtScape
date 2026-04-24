@@ -9,6 +9,7 @@ db_url = os.getenv("DATABASE_URL")
 
 # ---------- DB CONNECTION ----------
 
+
 @contextmanager
 def get_conn():
     conn = psycopg.connect(db_url)
@@ -23,6 +24,7 @@ def get_conn():
 
 
 # ---------- API FETCH ----------
+
 
 def fetch_artwork_metadata(objectid):
     url = f"https://data.artmuseum.princeton.edu/objects/{objectid}"
@@ -66,7 +68,7 @@ def fetch_artwork_metadata(objectid):
             "title": title,
             "date_range": date_range,
             "description": description,
-            "image_url": image_url
+            "image_url": image_url,
         }
 
     except Exception as e:
@@ -75,6 +77,7 @@ def fetch_artwork_metadata(objectid):
 
 
 # ---------- MAIN SCRIPT ----------
+
 
 def prefill_metadata(limit=None):
     with get_conn() as conn:
@@ -109,13 +112,16 @@ def prefill_metadata(limit=None):
                     WHERE objectid = %s
                 """
 
-                cur.execute(update_query, (
-                    metadata["title"],
-                    metadata["date_range"],
-                    metadata["description"],
-                    metadata["image_url"],
-                    objectid
-                ))
+                cur.execute(
+                    update_query,
+                    (
+                        metadata["title"],
+                        metadata["date_range"],
+                        metadata["description"],
+                        metadata["image_url"],
+                        objectid,
+                    ),
+                )
 
                 print(f"[UPDATED] {objectid}")
 

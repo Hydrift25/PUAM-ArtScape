@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { getSocket } from "../services/socket";
 
 const VERIFY_STATE = {
 	PENDING: 0,
@@ -32,6 +31,7 @@ export default function ScavengerPage({ artworks = [], userLocation = null }) {
 	const [nearbyDistances, setNearbyDistances] = useState(new Map());
 	const [showDeniedTooltip, setShowDeniedTooltip] = useState(false);
 	const [lockedNudge, setLockedNudge] = useState(null);
+	const [verifyingIds, setVerifyingIds] = useState(new Set());
 	const videoRef = useRef(null);
 	const nearbyFetchedRef = useRef(false);
 
@@ -88,14 +88,6 @@ export default function ScavengerPage({ artworks = [], userLocation = null }) {
 
 	useEffect(() => {
 		refreshFindsAndStats();
-	}, [refreshFindsAndStats]);
-
-	useEffect(() => {
-		const socket = getSocket();
-		if (!socket) return;
-		const handler = () => { refreshFindsAndStats(); };
-		socket.on("image_processed", handler);
-		return () => { socket.off("image_processed", handler); };
 	}, [refreshFindsAndStats]);
 
 	// Attach stream to video element once camera modal is open
@@ -158,22 +150,30 @@ export default function ScavengerPage({ artworks = [], userLocation = null }) {
 			alert("Couldn't get your location. Enable location services and try again.");
 			return;
 		}
+		const objectid = currObjectId;
 		const distToObject = haversineMeters(
 			userLocation.lat,
 			userLocation.lon,
 			Number(currLat),
 			Number(currLon),
 		);
+		setVerifyingIds((prev) => new Set([...prev, objectid]));
 		try {
 			await fetch("/api/scavenger/find", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				credentials: "include",
-				body: JSON.stringify({ objectid: currObjectId, imageUrl, distToObject }),
+				body: JSON.stringify({ objectid, imageUrl, distToObject }),
 			});
 			await refreshFindsAndStats();
 		} catch (err) {
 			console.error("Failed to submit find:", err);
+		} finally {
+			setVerifyingIds((prev) => {
+				const next = new Set(prev);
+				next.delete(objectid);
+				return next;
+			});
 		}
 	}
 
@@ -274,9 +274,10 @@ export default function ScavengerPage({ artworks = [], userLocation = null }) {
 									</button>
 									<button
 										className="camera-confirm-btn"
+										disabled={verifyingIds.has(currObjectId)}
 										onClick={() => { uploadPhoto(); closeCamera(); }}
 									>
-										Confirm
+										{verifyingIds.has(currObjectId) ? "Verifying…" : "Confirm"}
 									</button>
 								</div>
 							</>
@@ -396,6 +397,7 @@ export default function ScavengerPage({ artworks = [], userLocation = null }) {
 					const locked = !found && !unlocked;
 					const distance = nearbyDistances.get(art.objectid);
 					const showCameraBtn = !found && unlocked;
+					const isVerifying = verifyingIds.has(art.objectid);
 					const thumb = art.image_url
 						? `${art.image_url}/full/120,/0/default.jpg`
 						: null;
@@ -421,12 +423,13 @@ export default function ScavengerPage({ artworks = [], userLocation = null }) {
 								<span className="scav-card-title">
 									{art.title || "Untitled"}
 								</span>
-								<span className={`scav-status-pill scav-status-${verifyState ?? "none"}`}>
-									{verifyState === VERIFY_STATE.ACCEPTED        && "✓ Verified"}
-									{verifyState === VERIFY_STATE.PENDING         && "⏳ Pending review"}
-									{verifyState === VERIFY_STATE.FAILED_LOCATION && "📍 Too far — try again"}
-									{verifyState === VERIFY_STATE.FAILED_IMAGE    && "📷 Unclear photo — try again"}
-									{verifyState === null                         && "Not found"}
+								<span className={`scav-status-pill ${isVerifying ? "scav-status-verifying" : `scav-status-${verifyState ?? "none"}`}`}>
+									{isVerifying                                          ? "Verifying…"
+									: verifyState === VERIFY_STATE.ACCEPTED              ? "✓ Verified"
+									: verifyState === VERIFY_STATE.PENDING               ? "⏳ Pending review"
+									: verifyState === VERIFY_STATE.FAILED_LOCATION       ? "📍 Too far — try again"
+									: verifyState === VERIFY_STATE.FAILED_IMAGE          ? "📷 Unclear photo — try again"
+									:                                                       "Not found"}
 								</span>
 								{locked && lockedNudge === art.objectid && (
 									<p className="scav-card-nudge">
@@ -439,7 +442,8 @@ export default function ScavengerPage({ artworks = [], userLocation = null }) {
 							{showCameraBtn && (
 								<div className="scav-card-actions">
 									<button
-										className="scav-camera-btn"
+										className={`scav-camera-btn${isVerifying ? " btn--location-disabled" : ""}`}
+										disabled={isVerifying}
 										onClick={() => {
 											setCurrObjectId(art.objectid);
 											setCurrLat(art.lat);

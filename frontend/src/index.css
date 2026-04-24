@@ -48,27 +48,6 @@ body {
     border-radius: 10px;
 }
 
-.compact-popup .mapboxgl-popup-content {
-    width: auto;
-    min-width: 120px; /* Small enough for just a title */
-    max-width: 200px;
-    padding: 10px;
-    text-align: center;
-}
-
-.compact-popup .mapboxgl-popup-close-button {
-    display: none;
-}
-
-.compact-popup h4 {
-    margin: 0 0 4px 0;
-    font-size: 13px;
-}
-.compact-popup p {
-    margin: 0;
-    font-size: 10px;
-    line-height: 1.2;
-}
 
 .bottom-sheet {
     position: fixed;
@@ -720,7 +699,6 @@ body {
     position: sticky;
     top: 0;
     /* containing block for the absolutely-positioned X btn */
-    position: sticky;
     background: #fff;
     z-index: 10;
     display: flex;
@@ -1516,6 +1494,17 @@ body:has(.map-container-guest) .nearest-panel {
 .scav-status-none {
     background: #f5f5f5;
     color: #888;
+}
+
+@keyframes verify-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.45; }
+}
+
+.scav-status-verifying {
+    background: #eef1fb;
+    color: #4a6cf7;
+    animation: verify-pulse 1.2s ease-in-out infinite;
 }
 
 .scav-guest-card {
@@ -2900,21 +2889,3 @@ body:has(.map-container-guest) .nearest-panel {
     z-index: 498;
 }
 
-.socket-banner {
-    position: fixed;
-    top: 124px;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 150;
-    padding: 6px 14px;
-    border-radius: 999px;
-    font-size: 13px;
-    font-weight: 500;
-    background: #555;
-    color: #fff;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-}
-
-.socket-banner--failed {
-    background: #c33;
-}

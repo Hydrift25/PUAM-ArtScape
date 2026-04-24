@@ -1,7 +1,6 @@
 import { Suspense, lazy, useEffect, useState } from "react";
 import { BrowserRouter, Routes, Route, NavLink, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
-import { initSocket, disconnectSocket, subscribeSocketStatus } from "./services/socket";
 import MapPage from "./pages/MapPage";
 import ProfileDropdown from "./components/ProfileDropdown";
 
@@ -123,15 +122,6 @@ const lazyFallback = (
 function AppContent() {
 	const { user, loading: authLoading, guest } = useAuth();
 
-	const [socketStatus, setSocketStatus] = useState("disconnected");
-
-	useEffect(() => {
-		if (!user?.id) return;
-		initSocket(user.id);
-		const unsub = subscribeSocketStatus(setSocketStatus);
-		return () => { unsub(); disconnectSocket(); };
-	}, [user?.id]);
-
 	const location = useLocation();
 	const [artworks, setArtworks] = useState([]);
 	const [artworksLoading, setArtworksLoading] = useState(true);
@@ -181,20 +171,9 @@ function AppContent() {
 
 	const isMapPage = location.pathname === "/";
 
-	const showSocketBanner = socketStatus === "reconnecting" || socketStatus === "failed";
-
 	return (
 		<>
 			<AuthNavbar />
-			{showSocketBanner && (
-				<div
-					role="status"
-					aria-live="polite"
-					className={`socket-banner${socketStatus === "failed" ? " socket-banner--failed" : ""}`}
-				>
-					{socketStatus === "failed" ? "Connection lost — refresh to retry" : "Reconnecting…"}
-				</div>
-			)}
 			{artworksLoading && (
 				<div style={{ position: "fixed", top: 60, left: "50%", transform: "translateX(-50%)", zIndex: 100 }}>
 					<div className="auth-spinner" />

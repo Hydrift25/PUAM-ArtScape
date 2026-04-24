@@ -12,7 +12,6 @@ import {
 	createUserMarkerEl,
 } from "../components/ArtworkMarker";
 import { useAuth } from "../context/AuthContext";
-import { getSocket } from "../services/socket";
 
 const FOUND_STORAGE_KEY = "artscape.foundIds";
 const VERIFY_STATE = { PENDING: 0, ACCEPTED: 1, FAILED_LOCATION: 2, FAILED_IMAGE: 3 };
@@ -206,12 +205,21 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 		});
 	}, [locationStatus]); // eslint-disable-line react-hooks/exhaustive-deps
 
-	// Resize Mapbox canvas when the map tab is revealed after being hidden
+	// Resize Mapbox canvas when the map tab is revealed; also refresh finds so markers
+	// reflect any scavenger finds completed while on another tab.
 	useEffect(() => {
 		if (isVisible && map.current) {
 			map.current.resize();
 		}
-	}, [isVisible]);
+		if (isVisible && user) {
+			fetch("/api/artworks/visited", { credentials: "include" })
+				.then((r) => (r.ok ? r.json() : null))
+				.then((data) => {
+					if (data) setFindsMap(new Map(data.map((d) => [d.objectid, d.verify_state])));
+				})
+				.catch(() => {});
+		}
+	}, [isVisible]); // eslint-disable-line react-hooks/exhaustive-deps
 
 	useEffect(() => {
 		const fetchData = async () => {
@@ -253,20 +261,6 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 			.filter(([, v]) => v === VERIFY_STATE.ACCEPTED)
 			.map(([k]) => k)
 	);
-
-	useEffect(() => {
-		const socket = getSocket();
-		if (!socket) return;
-		const handler = async () => {
-			const res = await fetch("/api/artworks/visited", { credentials: "include" });
-			if (res.ok) {
-				const data = await res.json();
-				setFindsMap(new Map((data ?? []).map((d) => [d.objectid, d.verify_state])));
-			}
-		};
-		socket.on("image_processed", handler);
-		return () => { socket.off("image_processed", handler); };
-	}, []);
 
 	async function toggleFavorite(objectid) {
 		try {

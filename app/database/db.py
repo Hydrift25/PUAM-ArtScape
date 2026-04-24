@@ -3,19 +3,20 @@ import contextlib
 import psycopg
 from dotenv import load_dotenv
 
-#-----------------------------------------------------------------------
+# -----------------------------------------------------------------------
 
 load_dotenv()
 db_url = os.getenv("DATABASE_URL")
 
-#-----------------------------------------------------------------------
+# -----------------------------------------------------------------------
 
-VERIFY_STATE_PENDING         = 0  # submitted, awaiting worker
-VERIFY_STATE_ACCEPTED        = 1  # accepted
+VERIFY_STATE_PENDING = 0  # submitted, awaiting worker
+VERIFY_STATE_ACCEPTED = 1  # accepted
 VERIFY_STATE_FAILED_LOCATION = 2  # too far from artwork
-VERIFY_STATE_FAILED_IMAGE    = 3  # image mismatch
+VERIFY_STATE_FAILED_IMAGE = 3  # image mismatch
 
-#-----------------------------------------------------------------------
+# -----------------------------------------------------------------------
+
 
 def get_all_artworks():
     """
@@ -35,8 +36,7 @@ def get_all_artworks():
         ON g.objectid = d.objectid;
     """
 
-    with contextlib.closing(
-        psycopg.connect(db_url)) as conn:
+    with contextlib.closing(psycopg.connect(db_url)) as conn:
         with contextlib.closing(conn.cursor()) as cur:
             cur.execute(query)
             rows = cur.fetchall()
@@ -71,8 +71,7 @@ def get_artwork_by_id(objectid):
         WHERE g.objectid = %s;
     """
 
-    with contextlib.closing(
-        psycopg.connect(db_url)) as conn:
+    with contextlib.closing(psycopg.connect(db_url)) as conn:
         with contextlib.closing(conn.cursor()) as cur:
             cur.execute(query, (objectid,))
             row = cur.fetchone()
@@ -327,12 +326,12 @@ def get_leaderboard(limit=20):
 
     return [
         {
-            "id":           r[0],
+            "id": r[0],
             "display_name": r[1],
-            "email":        r[2],
-            "total_finds":  int(r[3]),
-            "score":        int(r[4]),
-            "rank":         int(r[5]),
+            "email": r[2],
+            "total_finds": int(r[3]),
+            "score": int(r[4]),
+            "rank": int(r[5]),
         }
         for r in rows
     ]
@@ -375,12 +374,12 @@ def get_leaderboard_me(user_id):
         return None
 
     return {
-        "id":           row[0],
+        "id": row[0],
         "display_name": row[1],
-        "email":        row[2],
-        "total_finds":  int(row[3]),
-        "score":        int(row[4]),
-        "rank":         int(row[5]),
+        "email": row[2],
+        "total_finds": int(row[3]),
+        "score": int(row[4]),
+        "rank": int(row[5]),
     }
 
 
@@ -395,18 +394,17 @@ def get_or_create_user(google_sub, email, display_name, avatar_url):
         RETURNING id, google_sub, email, display_name, avatar_url, created_at;
     """
 
-    with contextlib.closing(
-        psycopg.connect(db_url)) as conn:
+    with contextlib.closing(psycopg.connect(db_url)) as conn:
         with contextlib.closing(conn.cursor()) as cur:
             cur.execute(query, (google_sub, email, display_name, avatar_url))
             row = cur.fetchone()
             conn.commit()
 
     return {
-        "id":           row[0],
-        "google_sub":   row[1],
-        "email":        row[2],
+        "id": row[0],
+        "google_sub": row[1],
+        "email": row[2],
         "display_name": row[3],
-        "avatar_url":   row[4],
-        "created_at":   row[5].isoformat() if row[5] else None,
+        "avatar_url": row[4],
+        "created_at": row[5].isoformat() if row[5] else None,
     }

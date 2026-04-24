@@ -13,8 +13,8 @@ from pathlib import Path
 import re
 from dotenv import load_dotenv
 import os
-from torchvision import transforms
 import torch.nn.functional as F
+from torchvision.models import mobilenet_v3_small, MobileNet_V3_Small_Weights
 
 load_dotenv()
 
@@ -36,31 +36,35 @@ for file in Path("embeddings").iterdir():
 
 
 def load_model():
-    model = torch.hub.load("facebookresearch/dinov2", "dinov2_vits14")
+    weights = MobileNet_V3_Small_Weights.DEFAULT
+    model = mobilenet_v3_small(weights=weights)
+
+    # Remove classifier → keep only feature extractor
+    model = model.features
     model.eval()
-    model = model.to(DEVICE).to(DTYPE)
+
+    model = model.to(DEVICE)
+
     torch.set_grad_enabled(False)
 
-    preprocess = transforms.Compose(
-        [
-            transforms.Resize(256),
-            transforms.CenterCrop(224),
-            transforms.ToTensor(),
-            transforms.Normalize(
-                mean=(0.485, 0.456, 0.406),
-                std=(0.229, 0.224, 0.225),
-            ),
-        ]
-    )
+    preprocess = weights.transforms()
 
     return model, preprocess
 
 
 def get_embedding(image, model, preprocess):
-    image = preprocess(image).unsqueeze(0).to(DEVICE).to(DTYPE)
+    image = preprocess(image).unsqueeze(0).to(DEVICE)
+
     with torch.no_grad():
-        embedding = model(image)
-    return F.normalize(embedding, dim=-1)
+        features = model(image)  # shape: [1, C, H, W]
+
+        # Global average pooling → [1, C]
+        embedding = features.mean(dim=[2, 3])
+
+        # Normalize (same as before)
+        embedding = F.normalize(embedding, dim=-1)
+
+    return embedding
 
 
 def cosine_similarity(emb1, emb2):

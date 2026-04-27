@@ -2344,6 +2344,23 @@ body:has(.map-container-guest) .nearest-panel {
 /* ============================================================
    LOCATION BANNERS
    ============================================================ */
+.demo-mode-banner {
+    position: fixed;
+    top: 64px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 150;
+    background: rgba(30, 30, 30, 0.82);
+    color: #fff;
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    padding: 5px 14px;
+    border-radius: 0 0 8px 8px;
+    pointer-events: none;
+    white-space: nowrap;
+}
+
 .loc-banner {
     position: fixed;
     top: 64px;

@@ -120,6 +120,8 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 	// Mirrors navigationState for closure access in marker onclick handlers
 	const navigationStateRef = useRef(null);
 	const userInteractingRef = useRef(false);
+	const onPositionUpdateRef = useRef(null);
+	const wasdHandlerRef = useRef(null);
 
 	// Updates both the ref (for closure access) and the state (for rendering).
 	// Also writes to sessionStorage so ScavengerPage can initialize without a flash.
@@ -163,6 +165,7 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 	// Start watchPosition only after location is granted — iOS requires getUserMedia-style
 	// gesture before watchPosition will prompt, so we wait until getCurrentPosition succeeds.
 	useEffect(() => {
+		if (DEV_BYPASS_LOCATION) return;
 		if (locationStatus !== "granted") return;
 		if (watchIdRef.current !== null) return;
 		if (!navigator.geolocation) return;
@@ -568,11 +571,13 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 		setNavigationState((prev) => {
 			if (!prev || prev.mode !== "preview") return prev;
 
-			const watchId = navigator.geolocation.watchPosition(
-				(position) => onPositionUpdate(position, prev.route, prev.destination),
-				null,
-				{ enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 },
-			);
+			const watchId = DEV_BYPASS_LOCATION
+				? -1
+				: navigator.geolocation.watchPosition(
+					(position) => onPositionUpdate(position, prev.route, prev.destination),
+					null,
+					{ enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 },
+				);
 
 			return {
 				...prev,
@@ -654,7 +659,7 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 		setShowRecenter(false);
 
 		setNavigationState((prev) => {
-			if (prev?.watchId) navigator.geolocation.clearWatch(prev.watchId);
+			if (prev?.watchId && prev.watchId !== -1) navigator.geolocation.clearWatch(prev.watchId);
 			return null;
 		});
 
@@ -678,6 +683,8 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 			}
 		}
 	}
+
+	onPositionUpdateRef.current = onPositionUpdate;
 
 	useEffect(() => {
 		if (mapInitialized.current) return;
@@ -744,25 +751,43 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 				}
 			};
 
-			// Permission pre-check: skip the prompt banner if permission is already known.
-			// navigator.permissions is unavailable on older iOS Safari — wrap in try/catch.
-			try {
-				navigator.permissions
-					.query({ name: "geolocation" })
-					.then((result) => {
-						if (result.state === "granted") {
-							doSilentGet();
-						} else if (result.state === "denied") {
-							locationStatusRef.current = "denied";
-							setLocationStatus("denied");
-						}
-						// result.state === 'prompt' → leave as 'pending', banner will show
-					})
-					.catch(() => {
-						// permissions.query returned a rejected promise — leave as pending
-					});
-			} catch {
-				// navigator.permissions not available (old iOS Safari) — leave as pending
+			if (DEV_BYPASS_LOCATION) {
+				// Demo mode: start at the center of Princeton campus with a synthetic position.
+				const demoLat = 40.3435;
+				const demoLon = -74.6514;
+				geoPositionRef.current = { lat: demoLat, lon: demoLon };
+				lastPosRef.current = { lat: demoLat, lon: demoLon };
+				setUserLocation?.({ lat: demoLat, lon: demoLon });
+				map.current.setCenter([demoLon, demoLat]);
+				locationStatusRef.current = "granted";
+				setLocationStatus("granted");
+				const demoEl = createUserMarkerEl();
+				userMarkerRef.current = new mapboxgl.Marker(demoEl)
+					.setLngLat([demoLon, demoLat])
+					.addTo(map.current);
+				if (!isGuest) resolveMarkerStyles(demoLat, demoLon);
+				else fetchNearbyData(demoLat, demoLon);
+			} else {
+				// Permission pre-check: skip the prompt banner if permission is already known.
+				// navigator.permissions is unavailable on older iOS Safari — wrap in try/catch.
+				try {
+					navigator.permissions
+						.query({ name: "geolocation" })
+						.then((result) => {
+							if (result.state === "granted") {
+								doSilentGet();
+							} else if (result.state === "denied") {
+								locationStatusRef.current = "denied";
+								setLocationStatus("denied");
+							}
+							// result.state === 'prompt' → leave as 'pending', banner will show
+						})
+						.catch(() => {
+							// permissions.query returned a rejected promise — leave as pending
+						});
+				} catch {
+					// navigator.permissions not available (old iOS Safari) — leave as pending
+				}
 			}
 
 			const interactionStart = () => {
@@ -777,11 +802,74 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 
 	useEffect(() => {
 		return () => {
-			if (navigationState?.watchId) {
+			if (navigationState?.watchId && navigationState.watchId !== -1) {
 				navigator.geolocation.clearWatch(navigationState.watchId);
 			}
 		};
 	}, [navigationState?.watchId]);
+
+	// Reassigned every render so the keydown listener always reads the latest
+	// isGuest, refreshNearbyState, setUserLocation, etc. without those values
+	// needing to appear in the effect's dependency array.
+	wasdHandlerRef.current = DEV_BYPASS_LOCATION ? (e) => {
+		const key = e.key.toLowerCase();
+		// W=forward, S=backward, A=strafe-left, D=strafe-right (relative to map bearing)
+		const WASD_BEARINGS = { w: 0, s: 180, a: -90, d: 90 };
+		if (!(key in WASD_BEARINGS)) return;
+		// Don't intercept keypresses while a text input is focused (e.g. search bar)
+		if (document.activeElement?.tagName === "INPUT" || document.activeElement?.tagName === "TEXTAREA") return;
+		e.preventDefault();
+
+		const current = lastPosRef.current;
+		if (!current) return;
+
+		// Steps calibrated so each keypress moves ~20 m on the ground at Princeton's latitude
+		const STEP_LAT = 0.00018;
+		const STEP_LON = 0.000236;
+		// Rotate the step vector by the current map bearing so W always moves toward
+		// the visual top of the viewport regardless of how the map is rotated.
+		const bearing = map.current ? map.current.getBearing() : 0;
+		const rad = ((bearing + WASD_BEARINGS[key]) * Math.PI) / 180;
+		const lat = current.lat + Math.cos(rad) * STEP_LAT;
+		const lon = current.lon + Math.sin(rad) * STEP_LON;
+
+		lastPosRef.current = { lat, lon };
+		geoPositionRef.current = { lat, lon };
+		setUserLocation?.({ lat, lon });
+
+		if (userMarkerRef.current) {
+			userMarkerRef.current.setLngLat([lon, lat]);
+		}
+
+		const navState = navigationStateRef.current;
+		if (navState?.mode === "navigating") {
+			const syntheticPos = { coords: { latitude: lat, longitude: lon, accuracy: 1 } };
+			onPositionUpdateRef.current?.(syntheticPos, navState.route, navState.destination);
+		} else {
+			const last = lastNearbyRefreshPosRef.current;
+			if (!last || haversineMeters(lat, lon, last.lat, last.lon) > 10) {
+				if (!isGuest && stylesResolvedRef.current && markerElsRef.current.size > 0) {
+					refreshNearbyState(lat, lon);
+				} else if (isGuest) {
+					lastNearbyRefreshPosRef.current = { lat, lon };
+					fetch(`/api/artworks/nearby?lat=${lat}&lon=${lon}`)
+						.then((r) => r.json())
+						.then((data) => setNearbyArtworks(data.map((a) => ({ ...a, distance: Math.round(a.distance_m) })).slice(0, 3)))
+						.catch(() => {});
+				}
+			}
+		}
+	} : null;
+
+	useEffect(() => {
+		if (!DEV_BYPASS_LOCATION) return;
+		if (locationStatus !== "granted") return;
+		// Delegate to wasdHandlerRef.current so this effect never needs to re-register
+		// when isGuest or other render-phase values change — the ref is always current.
+		const handleKeyDown = (e) => wasdHandlerRef.current?.(e);
+		window.addEventListener("keydown", handleKeyDown);
+		return () => window.removeEventListener("keydown", handleKeyDown);
+	}, [locationStatus]);
 
 	function handleMapRecenter() {
 		if (!map.current) return;
@@ -876,8 +964,14 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 				</button>
 			)}
 
+			{DEV_BYPASS_LOCATION && (
+				<div className="demo-mode-banner">
+					Demo Mode · WASD to move
+				</div>
+			)}
+
 			{/* Location prompt banner — shown while we're waiting for user to enable location */}
-			{(locationStatus === "pending" || locationStatus === "loading") && (
+			{!DEV_BYPASS_LOCATION && (locationStatus === "pending" || locationStatus === "loading") && (
 				<div className="loc-banner loc-banner-prompt">
 					<span className="loc-banner-text">
 						📍 Find the 3 artworks closest to you →
@@ -893,7 +987,7 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 			)}
 
 			{/* Location denied banner — dismissable for the session */}
-			{locationStatus === "denied" && !deniedBannerDismissed && (
+			{!DEV_BYPASS_LOCATION && locationStatus === "denied" && !deniedBannerDismissed && (
 				<div className="loc-banner loc-banner-denied">
 					<span className="loc-banner-text">
 						📍 Location off · Showing all artworks ·{" "}

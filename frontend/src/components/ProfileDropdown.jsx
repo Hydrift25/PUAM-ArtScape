@@ -1,15 +1,27 @@
 import { useEffect, useRef, useState } from "react";
+import { AboutModal, HelpModal } from "./InfoModals";
 
 const POPOVER_WIDTH = 220;
 
 function getInitials(name) {
 	if (!name) return "?";
-	return name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase();
+	return name
+		.split(" ")
+		.map((n) => n[0])
+		.join("")
+		.slice(0, 2)
+		.toUpperCase();
 }
 
 function ExitIcon() {
 	return (
-		<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+		<svg
+			width="16"
+			height="16"
+			viewBox="0 0 24 24"
+			fill="currentColor"
+			aria-hidden="true"
+		>
 			<path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5-5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z" />
 		</svg>
 	);
@@ -50,7 +62,10 @@ export default function ProfileDropdown({ user, onLogout }) {
 		if (!isOpen) return;
 
 		function handleMouseDown(e) {
-			if (containerRef.current && !containerRef.current.contains(e.target)) {
+			if (
+				containerRef.current &&
+				!containerRef.current.contains(e.target)
+			) {
 				setIsOpen(false);
 			}
 		}
@@ -146,7 +161,10 @@ export default function ProfileDropdown({ user, onLogout }) {
 
 					<button
 						className="profile-dropdown-menu-btn"
-						onClick={() => { setIsOpen(false); setShowAbout(true); }}
+						onClick={() => {
+							setIsOpen(false);
+							setShowAbout(true);
+						}}
 						role="menuitem"
 					>
 						<span className="profile-dropdown-menu-icon">ℹ</span>
@@ -154,7 +172,10 @@ export default function ProfileDropdown({ user, onLogout }) {
 					</button>
 					<button
 						className="profile-dropdown-menu-btn"
-						onClick={() => { setIsOpen(false); setShowHelp(true); }}
+						onClick={() => {
+							setIsOpen(false);
+							setShowHelp(true);
+						}}
 						role="menuitem"
 					>
 						<span className="profile-dropdown-menu-icon">?</span>
@@ -166,7 +187,10 @@ export default function ProfileDropdown({ user, onLogout }) {
 					{/* Sign out — bottom of menu, destructive action */}
 					<button
 						className="profile-dropdown-signout-btn"
-						onClick={() => { setIsOpen(false); onLogout(); }}
+						onClick={() => {
+							setIsOpen(false);
+							onLogout();
+						}}
 						role="menuitem"
 					>
 						<ExitIcon />
@@ -175,41 +199,8 @@ export default function ProfileDropdown({ user, onLogout }) {
 				</div>
 			)}
 
-			{showAbout && (
-				<div className="pd-modal-overlay" onClick={() => setShowAbout(false)}>
-					<div className="pd-modal" onClick={(e) => e.stopPropagation()}>
-						<div className="pd-modal-header">
-							<h2 className="pd-modal-title">About ArtScape</h2>
-							<button className="pd-modal-close" onClick={() => setShowAbout(false)}>✕</button>
-						</div>
-						<p className="pd-modal-body">
-							Princeton ArtScape lets you explore 
-							artworks across the Princeton University campus. 
-							Browse an interactive map, get walking directions 
-							to any artwork, and compete against others in a scavenger hunt 
-							by hunting down and taking photos of pieces across campus!
-						</p>
-					</div>
-				</div>
-			)}
-
-			{showHelp && (
-				<div className="pd-modal-overlay" onClick={() => setShowHelp(false)}>
-					<div className="pd-modal" onClick={(e) => e.stopPropagation()}>
-						<div className="pd-modal-header">
-							<h2 className="pd-modal-title">Help</h2>
-							<button className="pd-modal-close" onClick={() => setShowHelp(false)}>✕</button>
-						</div>
-						<p className="pd-modal-body">
-							Tap any marker on the map to see artwork details. 
-							Walk within 200 m of a piece and tap
-							<strong> Verify Visit</strong> to mark it as found. 
-							In the Scavenger Hunt tab, navigate to nearby artworks 
-							and snap a photo for verification that you found them!
-						</p>
-					</div>
-				</div>
-			)}
+			<AboutModal isOpen={showAbout} onClose={() => setShowAbout(false)} />
+			<HelpModal isOpen={showHelp} onClose={() => setShowHelp(false)} />
 		</div>
 	);
 }

@@ -30,7 +30,9 @@ def get_all_artworks():
             d.title,
             d.date_range,
             d.description,
-            d.image_url
+            d.image_url,
+            d.maker,
+            d.medium
         FROM geo_prelim g
         LEFT JOIN object_details d
         ON g.objectid = d.objectid;
@@ -50,6 +52,8 @@ def get_all_artworks():
             "date_range": r[4],
             "description": r[5],
             "image_url": r[6],
+            "maker": r[7],
+            "medium": r[8],
         }
         for r in rows
     ]
@@ -64,7 +68,9 @@ def get_artwork_by_id(objectid):
             d.title,
             d.date_range,
             d.description,
-            d.image_url
+            d.image_url,
+            d.maker,
+            d.medium
         FROM geo_prelim g
         LEFT JOIN object_details d
         ON g.objectid = d.objectid
@@ -87,6 +93,8 @@ def get_artwork_by_id(objectid):
         "date_range": row[4],
         "description": row[5],
         "image_url": row[6],
+        "maker": row[7],
+        "medium": row[8],
     }
 
 
@@ -100,6 +108,8 @@ def get_nearby_artworks(user_lat, user_lon, limit=3):
             d.date_range,
             d.description,
             d.image_url,
+            d.maker,
+            d.medium,
             ST_Distance(
                 g.geom::geography,
                 ST_SetSRID(ST_MakePoint(%s, %s), 4326)::geography
@@ -124,7 +134,9 @@ def get_nearby_artworks(user_lat, user_lon, limit=3):
             "date_range": r[4],
             "description": r[5],
             "image_url": r[6],
-            "distance_m": round(float(r[7]), 1),
+            "maker": r[7],
+            "medium": r[8],
+            "distance_m": round(float(r[9]), 1),
         }
         for r in rows
     ]

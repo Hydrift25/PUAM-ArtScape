@@ -973,7 +973,7 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 
 			{DEV_BYPASS_LOCATION && (
 				<div className="demo-mode-banner">
-					Demo Mode · WASD to move
+					Demo Mode (Temporary for grading purposes) · WASD to move
 				</div>
 			)}
 

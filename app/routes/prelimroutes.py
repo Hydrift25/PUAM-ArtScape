@@ -153,23 +153,24 @@ def scavenger_find():
     if not artwork:
         return flask.jsonify({"error": "Artwork not found"}), 404
 
-    ref_image_url = artwork["image_url"] + "/full/600,/0/default.jpg"
-
     try:
         client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
-        ref_bytes = requests.get(ref_image_url).content
         user_bytes = requests.get(image_url).content
+
+        title = artwork.get("title") or "Unknown"
+        maker = artwork.get("maker") or "Unknown artist"
+        medium = artwork.get("medium") or "unknown medium"
+        date_range = artwork.get("date_range") or ""
+        date_str = f" ({date_range})" if date_range else ""
 
         response = client.models.generate_content(
             model="gemini-3.1-flash-lite-preview",
             contents=[
-                "You are verifying a scavenger hunt photo submission at Princeton University. "
-                "The FIRST image is the official reference photo of a campus artwork. "
-                "The SECOND image was taken by a user trying to find this artwork. "
-                "Does the user's photo clearly show the same artwork or sculpture? "
-                "Reply with only YES or NO.",
-                types.Part.from_bytes(data=ref_bytes, mime_type="image/jpeg"),
+                f"You are verifying a scavenger hunt photo submission at Princeton University Art Museum's outdoor campus. "
+                f"The user is trying to find an artwork titled '{title}'{date_str} by {maker}, which is a {medium} located outdoors on campus. "
+                f"Does the user's photo clearly show this artwork? "
+                f"Reply with only YES or NO.",
                 types.Part.from_bytes(data=user_bytes, mime_type="image/jpeg"),
             ],
         )

@@ -9,8 +9,6 @@ const VERIFY_STATE = {
 	FAILED_IMAGE: 3,
 };
 
-const DEV_BYPASS_LOCATION = import.meta.env.VITE_DEV_BYPASS_LOCATION === "true";
-
 export default function ScavengerPage({ artworks = [], userLocation = null }) {
 	const { user, login } = useAuth();
 	const navigate = useNavigate();
@@ -393,7 +391,7 @@ export default function ScavengerPage({ artworks = [], userLocation = null }) {
 					const f = findsMap.get(art.objectid);
 					const verifyState = f ? f.verify_state : null;
 					const found = verifyState === VERIFY_STATE.ACCEPTED;
-					const unlocked = (DEV_BYPASS_LOCATION || nearbyIds.has(art.objectid)) && !found;
+					const unlocked = nearbyIds.has(art.objectid) && !found;
 					const locked = !found && !unlocked;
 					const distance = nearbyDistances.get(art.objectid);
 					const showCameraBtn = !found && unlocked;
@@ -423,6 +421,9 @@ export default function ScavengerPage({ artworks = [], userLocation = null }) {
 								<span className="scav-card-title">
 									{art.title || "Untitled"}
 								</span>
+								{art.maker && (
+									<span className="maker-name">{art.maker}</span>
+								)}
 								<span className={`scav-status-pill ${isVerifying ? "scav-status-verifying" : `scav-status-${verifyState ?? "none"}`}`}>
 									{isVerifying                                          ? "Verifying…"
 									: verifyState === VERIFY_STATE.ACCEPTED              ? "✓ Verified"

@@ -164,18 +164,25 @@ export default function BottomSheet({
 					{/* Content card */}
 					<div className="bs-card">
 						<h2 className="bs-title">{art.title || "Untitled"}</h2>
-						{art.artist && (
-							<p className="bs-artist">{art.artist}</p>
+						{art.maker && (
+							<p className="maker-name">{art.maker}</p>
 						)}
 						<div className="bs-tag-row">
 							{art.date_range && (
 								<span className="bs-tag">{art.date_range}</span>
 							)}
-							{art.medium && (
-								<span className="bs-tag">{art.medium}</span>
-							)}
 						</div>
 					</div>
+
+					{/* Medium metadata block */}
+					{art.medium && (
+						<div className="artwork-meta-block">
+							<div className="artwork-meta-row">
+								<span className="artwork-meta-label">Medium</span>
+								<span className="artwork-meta-value">{art.medium}</span>
+							</div>
+						</div>
+					)}
 
 					{/* Location card */}
 					<div className="bs-card">
@@ -254,18 +261,25 @@ export default function BottomSheet({
 					{/* Content card */}
 					<div className="bs-card">
 						<h2 className="bs-title">{art.title || "Untitled"}</h2>
-						{art.artist && (
-							<p className="bs-artist">{art.artist}</p>
+						{art.maker && (
+							<p className="maker-name">{art.maker}</p>
 						)}
 						<div className="bs-tag-row">
 							{art.date_range && (
 								<span className="bs-tag">{art.date_range}</span>
 							)}
-							{art.medium && (
-								<span className="bs-tag">{art.medium}</span>
-							)}
 						</div>
 					</div>
+
+					{/* Medium metadata block */}
+					{art.medium && (
+						<div className="artwork-meta-block">
+							<div className="artwork-meta-row">
+								<span className="artwork-meta-label">Medium</span>
+								<span className="artwork-meta-value">{art.medium}</span>
+							</div>
+						</div>
+					)}
 
 					{/* Location card */}
 					<div className="bs-card">

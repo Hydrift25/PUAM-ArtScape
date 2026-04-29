@@ -608,6 +608,13 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 		const { latitude, longitude, accuracy } = position.coords;
 		lastPosRef.current = { lat: latitude, lon: longitude };
 
+		const last = lastNearbyRefreshPosRef.current;
+		if (!last || haversineMeters(latitude, longitude, last.lat, last.lon) > 10) {
+			if (!isGuest && stylesResolvedRef.current && markerElsRef.current.size > 0) {
+				refreshNearbyState(latitude, longitude);
+			}
+		}
+
 		const distanceRemaining = haversineMeters(
 			latitude,
 			longitude,

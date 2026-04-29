@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, NavLink, useLocation } from "react-router
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import MapPage from "./pages/MapPage";
 import ProfileDropdown from "./components/ProfileDropdown";
+import { AboutModal, HelpModal } from "./components/InfoModals";
 
 const AuthPage = lazy(() => import("./pages/AuthPage"));
 const ScavengerPage = lazy(() => import("./pages/ScavengerPage"));
@@ -43,15 +44,35 @@ function PersonIcon() {
 
 function GuestNavbar() {
 	const { login } = useAuth();
+	const [showAbout, setShowAbout] = useState(false);
+	const [showHelp, setShowHelp] = useState(false);
 	return (
 		<nav className="app-navbar">
 			<div className="navbar-left">
 				<span className="navbar-title">📍 Princeton Art Explorer</span>
 				<span className="navbar-subtitle">Guest Mode · Map View Only</span>
 			</div>
-			<button className="navbar-signin-btn" onClick={login}>
-				Sign In
-			</button>
+			<div className="navbar-right">
+				<button
+					className="navbar-icon-btn"
+					onClick={() => setShowAbout(true)}
+					aria-label="About"
+				>
+					ℹ
+				</button>
+				<button
+					className="navbar-icon-btn"
+					onClick={() => setShowHelp(true)}
+					aria-label="Help"
+				>
+					?
+				</button>
+				<button className="navbar-signin-btn" onClick={login}>
+					Sign In
+				</button>
+			</div>
+			<AboutModal isOpen={showAbout} onClose={() => setShowAbout(false)} />
+			<HelpModal isOpen={showHelp} onClose={() => setShowHelp(false)} />
 		</nav>
 	);
 }

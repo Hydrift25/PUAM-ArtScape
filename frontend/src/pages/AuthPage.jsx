@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { useAuth } from "../context/AuthContext";
+import { AboutModal, HelpModal } from "../components/InfoModals";
 
 function MapPinIcon() {
 	return (
@@ -21,6 +23,8 @@ function GoogleIcon() {
 
 export default function AuthPage() {
 	const { login, continueAsGuest } = useAuth();
+	const [showAbout, setShowAbout] = useState(false);
+	const [showHelp, setShowHelp] = useState(false);
 	const cancelled = new URLSearchParams(window.location.search).get("auth_cancelled") === "true";
 
 	return (
@@ -30,7 +34,7 @@ export default function AuthPage() {
 					<MapPinIcon />
 				</div>
 				<h1 className="auth-title">Princeton ArtScape</h1>
-				<p className="auth-subtitle">There’s art around every corner. Start walking!</p>
+				<p className="auth-subtitle">There's art around every corner. Start walking!</p>
 				<div className="auth-card">
 					<h2 className="auth-card-heading">Welcome</h2>
 					{cancelled
@@ -61,6 +65,14 @@ export default function AuthPage() {
 					</div>
 				</div>
 			</div>
+
+			<footer className="auth-footer">
+				<button className="auth-footer-link" onClick={() => setShowAbout(true)}>About</button>
+				<button className="auth-footer-link" onClick={() => setShowHelp(true)}>Help</button>
+			</footer>
+
+			<AboutModal isOpen={showAbout} onClose={() => setShowAbout(false)} />
+			<HelpModal isOpen={showHelp} onClose={() => setShowHelp(false)} />
 		</div>
 	);
 }

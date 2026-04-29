@@ -121,6 +121,7 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 	const navigationStateRef = useRef(null);
 	const userInteractingRef = useRef(false);
 	const onPositionUpdateRef = useRef(null);
+	const wasdHandlerRef = useRef(null);
 
 	// Updates both the ref (for closure access) and the state (for rendering).
 	// Also writes to sessionStorage so ScavengerPage can initialize without a flash.
@@ -807,57 +808,68 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 		};
 	}, [navigationState?.watchId]);
 
+	// Reassigned every render so the keydown listener always reads the latest
+	// isGuest, refreshNearbyState, setUserLocation, etc. without those values
+	// needing to appear in the effect's dependency array.
+	wasdHandlerRef.current = DEV_BYPASS_LOCATION ? (e) => {
+		const key = e.key.toLowerCase();
+		// W=forward, S=backward, A=strafe-left, D=strafe-right (relative to map bearing)
+		const WASD_BEARINGS = { w: 0, s: 180, a: -90, d: 90 };
+		if (!(key in WASD_BEARINGS)) return;
+		// Don't intercept keypresses while a text input is focused (e.g. search bar)
+		if (document.activeElement?.tagName === "INPUT" || document.activeElement?.tagName === "TEXTAREA") return;
+		e.preventDefault();
+
+		const current = lastPosRef.current;
+		if (!current) return;
+
+		// Steps calibrated so each keypress moves ~20 m on the ground at Princeton's latitude
+		const STEP_LAT = 0.00018;
+		const STEP_LON = 0.000236;
+		// Rotate the step vector by the current map bearing so W always moves toward
+		// the visual top of the viewport regardless of how the map is rotated.
+		const bearing = map.current ? map.current.getBearing() : 0;
+		const rad = ((bearing + WASD_BEARINGS[key]) * Math.PI) / 180;
+		const lat = current.lat + Math.cos(rad) * STEP_LAT;
+		const lon = current.lon + Math.sin(rad) * STEP_LON;
+
+		lastPosRef.current = { lat, lon };
+		geoPositionRef.current = { lat, lon };
+		setUserLocation?.({ lat, lon });
+
+		if (userMarkerRef.current) {
+			userMarkerRef.current.setLngLat([lon, lat]);
+		}
+
+		const navState = navigationStateRef.current;
+		if (navState?.mode === "navigating") {
+			const syntheticPos = { coords: { latitude: lat, longitude: lon, accuracy: 1 } };
+			onPositionUpdateRef.current?.(syntheticPos, navState.route, navState.destination);
+		} else {
+			const last = lastNearbyRefreshPosRef.current;
+			if (!last || haversineMeters(lat, lon, last.lat, last.lon) > 10) {
+				if (!isGuest && stylesResolvedRef.current && markerElsRef.current.size > 0) {
+					refreshNearbyState(lat, lon);
+				} else if (isGuest) {
+					lastNearbyRefreshPosRef.current = { lat, lon };
+					fetch(`/api/artworks/nearby?lat=${lat}&lon=${lon}`)
+						.then((r) => r.json())
+						.then((data) => setNearbyArtworks(data.map((a) => ({ ...a, distance: Math.round(a.distance_m) })).slice(0, 3)))
+						.catch(() => {});
+				}
+			}
+		}
+	} : null;
+
 	useEffect(() => {
 		if (!DEV_BYPASS_LOCATION) return;
 		if (locationStatus !== "granted") return;
-
-		const STEP_LAT = 0.00018;  // ~20 m north/south
-		const STEP_LON = 0.000236; // ~20 m east/west at Princeton's latitude
-
-		const handleKeyDown = (e) => {
-			if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) return;
-			e.preventDefault();
-
-			const current = lastPosRef.current;
-			if (!current) return;
-
-			let { lat, lon } = current;
-			if (e.key === "ArrowUp") lat += STEP_LAT;
-			else if (e.key === "ArrowDown") lat -= STEP_LAT;
-			else if (e.key === "ArrowRight") lon += STEP_LON;
-			else if (e.key === "ArrowLeft") lon -= STEP_LON;
-
-			lastPosRef.current = { lat, lon };
-			geoPositionRef.current = { lat, lon };
-			setUserLocation?.({ lat, lon });
-
-			if (userMarkerRef.current) {
-				userMarkerRef.current.setLngLat([lon, lat]);
-			}
-
-			const navState = navigationStateRef.current;
-			if (navState?.mode === "navigating") {
-				const syntheticPos = { coords: { latitude: lat, longitude: lon, accuracy: 1 } };
-				onPositionUpdateRef.current?.(syntheticPos, navState.route, navState.destination);
-			} else {
-				const last = lastNearbyRefreshPosRef.current;
-				if (!last || haversineMeters(lat, lon, last.lat, last.lon) > 10) {
-					if (!isGuest && stylesResolvedRef.current && markerElsRef.current.size > 0) {
-						refreshNearbyState(lat, lon);
-					} else if (isGuest) {
-						lastNearbyRefreshPosRef.current = { lat, lon };
-						fetch(`/api/artworks/nearby?lat=${lat}&lon=${lon}`)
-							.then((r) => r.json())
-							.then((data) => setNearbyArtworks(data.map((a) => ({ ...a, distance: Math.round(a.distance_m) })).slice(0, 3)))
-							.catch(() => {});
-					}
-				}
-			}
-		};
-
+		// Delegate to wasdHandlerRef.current so this effect never needs to re-register
+		// when isGuest or other render-phase values change — the ref is always current.
+		const handleKeyDown = (e) => wasdHandlerRef.current?.(e);
 		window.addEventListener("keydown", handleKeyDown);
 		return () => window.removeEventListener("keydown", handleKeyDown);
-	}, [locationStatus]); // eslint-disable-line react-hooks/exhaustive-deps
+	}, [locationStatus]);
 
 	function handleMapRecenter() {
 		if (!map.current) return;
@@ -954,7 +966,7 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 
 			{DEV_BYPASS_LOCATION && (
 				<div className="demo-mode-banner">
-					Demo Mode · Arrow keys to move
+					Demo Mode · WASD to move
 				</div>
 			)}
 

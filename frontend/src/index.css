@@ -143,6 +143,7 @@ body {
 /* Auth Page */
 .auth-page {
     min-height: 100vh;
+    min-height: 100svh;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -310,7 +311,7 @@ body {
     font-family: inherit;
     color: #bbb;
     cursor: pointer;
-    padding: 4px 2px;
+    padding: 12px 8px;
     transition: color 0.15s;
 }
 
@@ -323,7 +324,8 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    height: 100vh;
+    min-height: 100vh;
+    min-height: 100svh;
 }
 
 .auth-spinner {
@@ -388,6 +390,7 @@ body {
     cursor: pointer;
     transition: opacity 0.15s;
     flex-shrink: 0;
+    min-height: 44px;
 }
 
 .navbar-signin-btn:hover {
@@ -407,8 +410,8 @@ body {
     border: none;
     color: #fff;
     border-radius: 50%;
-    width: 32px;
-    height: 32px;
+    width: 44px;
+    height: 44px;
     font-size: 1rem;
     cursor: pointer;
     display: flex;
@@ -460,7 +463,7 @@ body {
 .profile-dropdown-trigger {
     background: none;
     border: none;
-    padding: 0;
+    padding: 4px;
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -683,7 +686,8 @@ body {
     bottom: 0;
     left: 0;
     right: 0;
-    height: 60px;
+    height: calc(60px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: env(safe-area-inset-bottom, 0px);
     background: #fff;
     border-top: 1px solid #e8e8e8;
     display: flex;
@@ -739,7 +743,7 @@ body {
     left: 0;
     right: 0;
     top: 64px;
-    bottom: 60px;
+    bottom: calc(60px + env(safe-area-inset-bottom, 0px));
 }
 
 /* ============================================================
@@ -801,8 +805,8 @@ body {
     background: #f0f0f0;
     border: none;
     border-radius: 50%;
-    width: 28px;
-    height: 28px;
+    width: 44px;
+    height: 44px;
     font-size: 0.75rem;
     color: #555;
     cursor: pointer;
@@ -818,7 +822,7 @@ body {
 }
 
 .bs-sheet-content {
-    padding-bottom: 24px;
+    padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
 }
 
 /* Succinct sheet */
@@ -889,6 +893,9 @@ body {
     text-decoration: none;
     white-space: nowrap;
     flex-shrink: 0;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
 }
 
 /* Image */
@@ -910,8 +917,8 @@ body {
     background: rgba(255,255,255,0.9);
     border: none;
     border-radius: 50%;
-    width: 36px;
-    height: 36px;
+    width: 44px;
+    height: 44px;
     font-size: 1.1rem;
     cursor: pointer;
     display: flex;
@@ -1079,6 +1086,7 @@ body {
     flex-direction: column;
     gap: 10px;
     padding: 14px 16px 20px;
+    padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px));
 }
 
 .bs-action-btn {
@@ -1140,7 +1148,7 @@ body {
    ============================================================ */
 .nearest-panel {
     position: fixed;
-    bottom: 60px;
+    bottom: calc(60px + env(safe-area-inset-bottom, 0px));
     left: 0;
     right: 0;
     z-index: 50;
@@ -1285,7 +1293,7 @@ body:has(.map-container-guest) .nearest-panel {
 /* ── Restore pill (floating button shown when NearestArtworksPanel is minimized) ── */
 .restore-pill {
     position: fixed;
-    bottom: 72px; /* 60px bottom-nav + 12px gap */
+    bottom: calc(72px + env(safe-area-inset-bottom, 0px)); /* 60px bottom-nav + 12px gap */
     left: 16px;
     z-index: 50;
     background: #FDF3E7;
@@ -1319,8 +1327,9 @@ body:has(.map-container-guest) .nearest-panel {
    ============================================================ */
 .page-container {
     padding-top: 64px;
-    padding-bottom: 60px;
+    padding-bottom: calc(60px + env(safe-area-inset-bottom, 0px));
     min-height: 100vh;
+    min-height: 100svh;
     background: #FDF3E7;
     overflow-y: auto;
     box-sizing: border-box;
@@ -1500,8 +1509,8 @@ body:has(.map-container-guest) .nearest-panel {
     color: #fff;
     border: none;
     border-radius: 8px;
-    width: 38px;
-    height: 38px;
+    width: 44px;
+    height: 44px;
     font-size: 1.1rem;
     cursor: pointer;
     display: flex;
@@ -2570,6 +2579,7 @@ body:has(.map-container-guest) .nearest-panel {
    ============================================================ */
 .bs-loc-denied-note {
     margin: 0;
+    margin-top: 8px;
     font-size: 0.8rem;
     color: #888;
     text-align: center;
@@ -2579,7 +2589,7 @@ body:has(.map-container-guest) .nearest-panel {
    BOTTOM SHEET — navigation mini mode
    ============================================================ */
 .bs-nav-mini {
-    height: 64px;
+    height: calc(64px + env(safe-area-inset-bottom, 0px));
     overflow: hidden;
 }
 
@@ -2588,7 +2598,7 @@ body:has(.map-container-guest) .nearest-panel {
     align-items: center;
     justify-content: space-between;
     padding: 0 16px;
-    height: 100%;
+    height: 64px;
 }
 
 .bs-nav-mini-title {
@@ -2628,7 +2638,7 @@ body:has(.map-container-guest) .nearest-panel {
    ============================================================ */
 .directions-panel {
     position: fixed;
-    bottom: 56px;
+    bottom: calc(60px + env(safe-area-inset-bottom, 0px));
     left: 0;
     right: 0;
     z-index: 500;
@@ -2683,7 +2693,9 @@ body:has(.map-container-guest) .nearest-panel {
 }
 
 .directions-cancel-btn {
-    display: block;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     width: 100%;
     text-align: center;
     background: none;
@@ -2692,6 +2704,7 @@ body:has(.map-container-guest) .nearest-panel {
     font-size: 0.9rem;
     cursor: pointer;
     padding: 4px 0;
+    min-height: 44px;
 }
 
 .directions-summary {
@@ -2723,6 +2736,7 @@ body:has(.map-container-guest) .nearest-panel {
     padding: 8px 14px;
     font-size: 0.85rem;
     cursor: pointer;
+    min-height: 44px;
 }
 
 .directions-chevron-wrap {
@@ -2980,7 +2994,7 @@ body:has(.map-container-guest) .nearest-panel {
 .recenter-btn {
     position: fixed;
     z-index: 510;
-    bottom: calc(56px + 88px + 12px);
+    bottom: calc(60px + 88px + 12px + env(safe-area-inset-bottom, 0px));
     right: 16px;
     width: 44px;
     height: 44px;
@@ -3007,11 +3021,11 @@ body:has(.map-container-guest) .nearest-panel {
 }
 
 .recenter-btn--guest {
-    bottom: calc(64px + 88px + 12px);
+    bottom: calc(64px + 88px + 12px + env(safe-area-inset-bottom, 0px));
 }
 
 .directions-panel--guest {
-    bottom: 64px;
+    bottom: calc(64px + env(safe-area-inset-bottom, 0px));
 }
 
 .directions-guest-fill {
@@ -3019,7 +3033,7 @@ body:has(.map-container-guest) .nearest-panel {
     bottom: 0;
     left: 0;
     right: 0;
-    height: 64px;
+    height: calc(64px + env(safe-area-inset-bottom, 0px));
     background: white;
     z-index: 498;
 }

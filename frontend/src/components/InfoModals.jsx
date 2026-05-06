@@ -130,6 +130,7 @@ function AboutContent() {
 					{[
 						"Mapbox GL JS",
 						"Google OAuth",
+						"Google Gemini API",
 						"Princeton University Art Museum",
 					].map((tech) => (
 						<span

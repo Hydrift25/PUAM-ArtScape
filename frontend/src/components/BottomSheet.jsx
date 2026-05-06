@@ -202,7 +202,7 @@ export default function BottomSheet({
 							Get Directions
 						</button>
 						{locationStatus === "denied" && (
-							<p className="bs-loc-denied-note" style={{ marginTop: 8 }}>
+							<p className="bs-loc-denied-note">
 								Enable location to use in-app directions.
 							</p>
 						)}
@@ -299,7 +299,7 @@ export default function BottomSheet({
 							Get Directions
 						</button>
 						{locationStatus === "denied" && (
-							<p className="bs-loc-denied-note" style={{ marginTop: 8 }}>
+							<p className="bs-loc-denied-note">
 								Enable location to use in-app directions.
 							</p>
 						)}

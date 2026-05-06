@@ -171,18 +171,11 @@ export default function BottomSheet({
 							{art.date_range && (
 								<span className="bs-tag">{art.date_range}</span>
 							)}
+							{art.medium && (
+								<span className="bs-tag">{art.medium}</span>
+							)}
 						</div>
 					</div>
-
-					{/* Medium metadata block */}
-					{art.medium && (
-						<div className="artwork-meta-block">
-							<div className="artwork-meta-row">
-								<span className="artwork-meta-label">Medium</span>
-								<span className="artwork-meta-value">{art.medium}</span>
-							</div>
-						</div>
-					)}
 
 					{/* Location card */}
 					<div className="bs-card">
@@ -268,18 +261,11 @@ export default function BottomSheet({
 							{art.date_range && (
 								<span className="bs-tag">{art.date_range}</span>
 							)}
+							{art.medium && (
+								<span className="bs-tag">{art.medium}</span>
+							)}
 						</div>
 					</div>
-
-					{/* Medium metadata block */}
-					{art.medium && (
-						<div className="artwork-meta-block">
-							<div className="artwork-meta-row">
-								<span className="artwork-meta-label">Medium</span>
-								<span className="artwork-meta-value">{art.medium}</span>
-							</div>
-						</div>
-					)}
 
 					{/* Location card */}
 					<div className="bs-card">

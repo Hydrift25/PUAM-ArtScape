@@ -12,7 +12,15 @@ export default defineConfig(({ mode }) => {
 
     build: {
       outDir: "dist",
-      emptyOutDir: true
+      emptyOutDir: true,
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            "vendor-mapbox": ["mapbox-gl"],
+            "vendor-react": ["react", "react-dom", "react-router-dom"],
+          }
+        }
+      }
     },
 
     server: {

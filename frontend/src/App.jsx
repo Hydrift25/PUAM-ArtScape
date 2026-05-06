@@ -181,7 +181,7 @@ function AppContent() {
 			<>
 				<GuestNavbar />
 				{artworksLoading && (
-					<div style={{ position: "fixed", top: 60, left: "50%", transform: "translateX(-50%)", zIndex: 100 }}>
+					<div className="artworks-loading-spinner">
 						<div className="auth-spinner" />
 					</div>
 				)}

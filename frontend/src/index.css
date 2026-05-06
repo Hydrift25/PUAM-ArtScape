@@ -337,6 +337,14 @@ body {
     animation: spin 0.8s linear infinite;
 }
 
+.artworks-loading-spinner {
+    position: fixed;
+    top: 60px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 100;
+}
+
 @keyframes spin {
     to { transform: rotate(360deg); }
 }

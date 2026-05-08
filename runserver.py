@@ -1,6 +1,6 @@
 import os
 import sys
-from app.routes.prelimroutes import app
+from app.server.routes import app
 from dotenv import load_dotenv
 
 # -----------------------------------------------------------------------

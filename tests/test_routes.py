@@ -1,4 +1,4 @@
-"""Tests for HTTP routes in app/routes/prelimroutes.py.
+"""Tests for HTTP routes in app/routes/routes.py.
 
 Database functions are patched, the Gemini client is patched (image
 verification is tested separately), and Cloudinary upload is patched.
@@ -222,8 +222,8 @@ def test_scavenger_find_dev_bypass_location(logged_in_client, monkeypatch):
 
     with patch.object(db, "get_artwork_by_id", return_value=artwork), \
          patch.object(db, "record_find") as record, \
-         patch("app.routes.prelimroutes.genai.Client", return_value=fake_client), \
-         patch("app.routes.prelimroutes.requests.get") as req_get:
+         patch("app.server.routes.genai.Client", return_value=fake_client), \
+         patch("app.server.routes.requests.get") as req_get:
         req_get.return_value.content = b"img"
 
         resp = logged_in_client.post(
@@ -259,7 +259,7 @@ def test_upload_no_file(logged_in_client):
 
 def test_upload_returns_secure_url(logged_in_client):
     with patch(
-        "app.routes.prelimroutes.cloudinary.uploader.upload",
+        "app.server.routes.cloudinary.uploader.upload",
         return_value={"secure_url": "https://cdn/img.jpg"},
     ) as upload:
         resp = logged_in_client.post(
@@ -373,7 +373,7 @@ def test_auth_callback_oauth_error_redirects(client):
     from authlib.integrations.base_client.errors import OAuthError
 
     with patch(
-        "app.routes.prelimroutes.oauth.google.authorize_access_token",
+        "app.server.routes.oauth.google.authorize_access_token",
         side_effect=OAuthError("user cancelled"),
     ):
         resp = client.get("/api/auth/callback")
@@ -399,7 +399,7 @@ def test_auth_callback_success_creates_session(client):
         "created_at": None,
     }
     with patch(
-        "app.routes.prelimroutes.oauth.google.authorize_access_token",
+        "app.server.routes.oauth.google.authorize_access_token",
         return_value=fake_token,
     ), patch.object(db, "get_or_create_user", return_value=user_row):
         resp = client.get("/api/auth/callback")

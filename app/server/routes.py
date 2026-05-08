@@ -87,17 +87,6 @@ def get_favorites():
     return flask.jsonify(db.get_favorites(user["id"]))
 
 
-# Serve React
-@app.route("/", defaults={"path": ""})
-@app.route("/<path:path>")
-def serve_react(path):
-    dist = app.static_folder
-    target = os.path.join(dist, path)
-    if path and os.path.exists(target):
-        return send_from_directory(dist, path)
-    return send_from_directory(dist, "index.html")
-
-
 @app.route("/api/artworks/visited", methods=["GET"])
 def visited_artworks():
     user = session.get("user")
@@ -268,3 +257,17 @@ def auth_me():
     resp = flask.jsonify(user if user else {"user": None})
     resp.headers["Cache-Control"] = "private, max-age=60"
     return resp
+
+
+# -----------------------------------------------------------------------
+
+
+# Serve React
+@app.route("/", defaults={"path": ""})
+@app.route("/<path:path>")
+def serve_react(path):
+    dist = app.static_folder
+    target = os.path.join(dist, path)
+    if path and os.path.exists(target):
+        return send_from_directory(dist, path)
+    return send_from_directory(dist, "index.html")

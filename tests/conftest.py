@@ -28,7 +28,7 @@ import pytest
 
 @pytest.fixture
 def app():
-    from app.routes.prelimroutes import app as flask_app
+    from app.server.routes import app as flask_app
 
     flask_app.config.update(TESTING=True)
     return flask_app

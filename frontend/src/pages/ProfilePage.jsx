@@ -109,6 +109,7 @@ export default function ProfilePage() {
 	const visitedCount = visited.length;
 	const verifiedCount = visited.filter((v) => v.verify_state === 1).length;
 	const favCount = favorites.length;
+	const points = verifiedCount * 10;
 
 	const activity = useMemo(() => {
 		const events = [
@@ -157,7 +158,7 @@ export default function ProfilePage() {
 				<p className="profile-email">{user?.email || ""}</p>
 				<div className="profile-stats-row">
 					<div className="profile-stat">
-						<span className="profile-stat-value">0</span>
+						<span className="profile-stat-value">{points}</span>
 						<span className="profile-stat-label">Points</span>
 					</div>
 					<div className="profile-stat">

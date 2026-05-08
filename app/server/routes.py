@@ -27,7 +27,6 @@ app = flask.Flask(
     static_folder=os.path.join(
         os.path.dirname(__file__), "..", "..", "frontend", "dist"
     ),
-    static_url_path="",
 )
 app.secret_key = os.getenv("APP_SECRET_KEY")
 Compress(app)
@@ -260,14 +259,6 @@ def auth_me():
 
 
 # -----------------------------------------------------------------------
-
-
-@app.route("/api/debug/static")
-def debug_static():
-    import os
-    exists = os.path.exists(app.static_folder)
-    contents = os.listdir(app.static_folder) if exists else []
-    return flask.jsonify({"static_folder": app.static_folder, "exists": exists, "contents": contents})
 
 
 # Serve React

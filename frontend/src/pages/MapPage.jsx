@@ -337,7 +337,7 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 		clearMarkers();
 		markerElsRef.current.clear();
 
-		const showAllDetailed = isGuest || locationStatusRef.current === "denied" || DEV_BYPASS_LOCATION;
+		const showAllDetailed = isGuest || locationStatusRef.current === "denied";
 
 		if (showAllDetailed) {
 			artworksData.forEach((art) => {
@@ -927,7 +927,6 @@ export default function MapPage({ isGuest = false, artworks = [], isVisible = tr
 					const showDetailed =
 						isGuest ||
 						locationStatus === "denied" ||
-						DEV_BYPASS_LOCATION ||
 						nearbyArtworks.some((a) => a.objectid === art.objectid);
 					setSheetContent({ art, type: showDetailed ? "detailed" : "succinct" });
 				}}

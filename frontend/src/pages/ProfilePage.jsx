@@ -145,7 +145,7 @@ export default function ProfilePage() {
 					className="profile-logout-btn"
 					onClick={handleLogout}
 				>
-					Log Out
+					Sign Out
 				</button>
 			</div>
 

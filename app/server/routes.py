@@ -262,6 +262,14 @@ def auth_me():
 # -----------------------------------------------------------------------
 
 
+@app.route("/api/debug/static")
+def debug_static():
+    import os
+    exists = os.path.exists(app.static_folder)
+    contents = os.listdir(app.static_folder) if exists else []
+    return flask.jsonify({"static_folder": app.static_folder, "exists": exists, "contents": contents})
+
+
 # Serve React
 @app.route("/", defaults={"path": ""})
 @app.route("/<path:path>")
